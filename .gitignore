@@ -1,0 +1,44 @@
+# General Node.js / Next.js
+node_modules/
+.next/
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+.npmrc
+*.log
+.swp
+
+# Next.js SWC build cache
+.swc/
+
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Output of go build
+/build/
+dist/
+bin/
+
+# Go workspace file
+go.work
+
+# Go module cache
+vendor/
+
+# Go test cache
+*.coverprofile
+
+# IDE/editor files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

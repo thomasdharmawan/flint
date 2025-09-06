@@ -1,0 +1,66 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on:
+      - self-hosted
+      - ${{ matrix.os == 'darwin' && 'macOS' || 'Linux' }}
+      - ${{ matrix.os == 'darwin' && 'ARM64' || 'X64' }}
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        os: [linux, darwin]
+        arch: [amd64, arm64]
+        exclude:
+          - os: darwin
+            arch: amd64
+          - os: linux
+            arch: arm64
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.25.0'
+
+    - name: Install Bun
+      uses: oven-sh/setup-bun@v1
+      with:
+        bun-version: latest
+
+    - name: Build Web UI
+      run: |
+        cd web
+        bun install
+        bun run build
+        cd ..
+
+
+
+    - name: Build
+      env:
+        PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'arm64' && '/usr/lib/aarch64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
+      run: |
+        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -ldflags="-s -w" -o flint${{ matrix.os == 'windows' && '.exe' || '' }} .
+
+    - name: Package
+      run: |
+        if [ "${{ matrix.os }}" != "windows" ]; then
+          zip -j flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+        else
+          7z a flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+        fi
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          flint-${{ matrix.os }}-${{ matrix.arch }}.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
