@@ -42,3 +42,5 @@ vendor/
 .idea/
 .DS_Store
 Thumbs.db
+
+flint

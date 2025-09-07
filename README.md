@@ -1,103 +1,103 @@
-# flint — Modern KVM Management UI
+# 🌀 Flint — KVM Management, Reimagined
 
 <p align="center">
-  <img src="https://i.ibb.co/yj2bFZG/flint-banner.jpg" alt="flint Logo" width="300"/>
+  <img src="https://i.ibb.co/yj2bFZG/flint-banner.jpg" alt="Flint Logo" width="300"/>
 </p>
 
 <p align="center">
-  <strong>A sleek, self-contained, drop-in web UI, CLI and API for KVM virtualization.</strong>
+  <strong>
+    A single &lt;8MB binary with a modern Web UI, CLI, and API for KVM.
+    <br/>No XML. No bloat. Just VMs.
+  </strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/ccheshirecat/flint" alt="Latest Release">
-  <img src="https://img.shields.io/github/license/ccheshirecat/flint" alt="License">
-   <img src="https://img.shields.io/github/actions/workflow/status/ccheshirecat/flint/.github/workflows/release.yml" alt="Release Status">
+  <a href="https://github.com/ccheshirecat/flint/releases/latest">
+    <img src="https://img.shields.io/github/v/release/ccheshirecat/flint" alt="Latest Release">
+  </a>
+  <a href="https://github.com/ccheshirecat/flint/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/ccheshirecat/flint" alt="License">
+  </a>
+  <a href="https://github.com/ccheshirecat/flint/actions/workflows/release.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/ccheshirecat/flint/.github/workflows/release.yml" alt="Build Status">
+  </a>
 </p>
 
 ---
 
-![flint Dashboard](https://i.ibb.co/wN9H8WKX/Screenshot-2025-09-07-at-3-51-58-AM.png)
+![Flint Dashboard](https://i.ibb.co/wN9H8WKX/Screenshot-2025-09-07-at-3-51-58-AM.png)
 
-flint is a **single binary**, fully self-contained KVM management solution designed for **developers, sysadmins, and advanced home labs**. Manage virtual machines efficiently without the overhead of complex platforms.
-
----
-
-## Core Philosophy
-
-- **Single Drop-In Binary** — No installers or dependencies(other than libvirt). Self contained 8.4mb binary including web UI. Run it and you’re operational.  
-- **Focused, Modern UI** — Built with Next.js + Tailwind CSS for a clean, responsive interface.  
-- **Frictionless Provisioning** — Cloud-Init support, managed image library, and multiple import options.  
-- **Non-Intrusive** — flint lives on your host as a tool, never as a platform you’re locked into.  
+Flint is a modern, self-contained KVM management tool built for developers, sysadmins, and home labs who want zero bloat and maximum efficiency. It was built in a few hours out of a sudden urge for something better.
 
 ---
 
-## Quickstart
+### 🚀 One-Liner Install
 
-**Prerequisites:** Linux host with `libvirt` and `qemu-kvm` installed. For building from source: Go 1.25.0 and bun/node.js.
-
-### Download Precompiled Binary (Recommended)
-
-Download the precompiled binary from releases, then run `./flint serve`.
-
-### Build from Source
-
-If you prefer to build from source:
-
-1. **Install Go** (if not already installed)
-2. **Clone the repository**
-   ```bash
-   git clone https://github.com/ccheshirecat/flint.git
-   cd flint
-   ```
-3. **Build the web UI**
-    ```bash
-    cd web
-    bun install
-    bun run build
-    cd ..
-    ```
-   The Next.js export site will be available in `web/out/`
-4. **Build the binary**
-   ```bash
-   go build -o flint .
-   ```
-
-### Running Flint
-
-After installation or building:
+**Prerequisites:** A Linux host with `libvirt` and `qemu-kvm` installed.
 
 ```bash
-./flint serve
+curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | sh
 ```
+*Auto-detects OS/arch, installs to `/usr/local/bin`, and you're ready in seconds.*
 
-The web UI will be available at `http://localhost:5550`. The binary includes the web interface and serves it directly.
+---
 
-**Running in background:**
+### ✨ Core Philosophy
+
+-   🖥️ **Modern UI** — A beautiful, responsive Next.js + Tailwind interface, fully embedded.
+-   ⚡ **Single Binary** — No containers, no XML hell. A sub-8MB binary is all you need.
+-   🛠️ **Powerful CLI & API** — Automate everything. If you can do it in the UI, you can do it from the command line or API.
+-   📦 **Frictionless Provisioning** — Native Cloud-Init support and a simple, snapshot-based template system.
+-   💪 **Non-Intrusive** — Flint is a tool that serves you. It's not a platform that locks you in.
+
+---
+
+### 🏎️ Quickstart
+
+**1. Start the Server**
 ```bash
-# Using nohup
-nohup ./flint serve &
-
-# Or set up systemd service
-sudo systemctl enable flint
-sudo systemctl start flint
+flint serve
 ```
+*   **Web UI:** `http://localhost:5550`
+*   **API:** `http://localhost:5550/api`
 
-**Dependencies:** For precompiled binary: only `libvirt` and `qemu-kvm`. For building from source: Go 1.25.0, `libvirt`, `qemu-kvm`, and bun/node.js.
+**2. Use the CLI**
+```bash
+# List your VMs
+flint vm list --all
 
-### Precompiled Binaries
+# Launch a new Ubuntu VM named 'web-01'
+flint launch ubuntu-24.04 --name web-01
 
-Precompiled binaries (8.4mb) are available for download from the [releases page](https://github.com/ccheshirecat/flint/releases).
+# SSH directly into your new VM
+flint ssh web-01
 
-### Automated CI/CD Releases
-GitHub Actions automates building and publishing cross-compiled binaries on tag pushes (e.g., `git tag v1.0.0 && git push origin v1.0.0`). The workflow builds the Next.js web UI with Bun, embeds it into the Go binary using go:embed, and releases ZIP archives for Linux (AMD64/ARM64), macOS (AMD64), and Windows (AMD64).
+# Create a template from your configured VM
+flint snapshot create web-01 --tag baseline-setup
 
-Supported Platforms:
-- Linux AMD64, ARM64
-- Darwin (macOS) AMD64
-- Windows AMD64
+# Launch a clone from your new template
+flint launch --from web-01 --name web-02
+```
+---
 
-Binaries are dynamically linked with libvirt as the only runtime dependency and stripped (-ldflags="-s -w"). See [.github/workflows/release.yml](.github/workflows/release.yml) for details.
+### 📖 Full Documentation
 
-### Documentation and API
+While Flint is designed to be intuitive, the full CLI and API documentation, including all commands and examples, is available at:
 
-Check out docs.md for more details
+➡️ **[DOCS.md](docs.md)**
+
+---
+
+### 🔧 Tech Stack
+
+-   **Backend:** Go 1.25+
+-   **Web UI:** Next.js + Tailwind + Bun
+-   **KVM Integration:** libvirt-go
+-   **Binary Size:** ~8.4MB (stripped)
+
+---
+
+<p align="center">
+  <b>🚀 Flint is young, fast-moving, and designed for builders.<br/>
+  Try it. Break it. Star it. Contribute.</b>
+</p>

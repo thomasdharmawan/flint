@@ -1,302 +1,249 @@
-# Flint Documentation
+# 🌀 Flint Documentation
+
+Welcome to the complete reference for the Flint CLI and API.
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [CLI Reference](#cli-reference)
+  - [Global Flags](#global-flags)
+  - [Commands](#commands)
+    - [`flint serve`](#flint-serve)
+    - [`flint launch`](#flint-launch)
+    - [`flint list`](#flint-list)
+    - [`flint ssh`](#flint-ssh)
+    - [`flint console`](#flint-console)
+    - [`flint snapshot`](#flint-snapshot)
+    - [`flint delete`](#flint-delete)
+- [API Reference](#api-reference)
+  - [Authentication](#authentication)
+  - [Endpoints](#endpoints)
+  - [Request/Response Examples](#requestresponse-examples)
+  - [WebSocket Connections](#websocket-connections)
+
+---
 
 ## Getting Started
 
+### Prerequisites
+Ensure your Linux host has `libvirt` and `qemu-kvm` installed and the `libvirtd` service is running.
+
+### Installation
+The recommended installation method is the one-liner script:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | sh
+```
+This will install the `flint` binary to `/usr/local/bin`.
+
 ### Running the Server
-
-Start the Flint server with:
-
+Start the Flint server, which includes the web UI and the REST API:
 ```bash
-./flint serve
+flint serve
 ```
+By default, the UI is available at `http://localhost:5550`.
 
-The web UI will be available at `http://localhost:5550`. The binary includes the complete web interface and serves it directly.
+For production, it's recommended to run Flint as a `systemd` service. An example service file can be found in the repository.
 
-**Running in background:**
-```bash
-# Using nohup
-nohup ./flint serve &
-
-# Or set up systemd service
-sudo systemctl enable flint
-sudo systemctl start flint
-```
-
-**Dependencies:** Only `libvirt` and `qemu-kvm` are required on the host system.
+---
 
 ## CLI Reference
 
-### Global Options
-
-- `--socket`: Path to the libvirt socket (default: `/var/run/libvirt/libvirt-sock`)
+### Global Flags
+- `--socket string`: Path to the libvirt socket (default: `/var/run/libvirt/libvirt-sock`).
+- `-h, --help`: Help for any command.
 
 ### Commands
 
 #### `flint serve`
-
-Start the flint web server on port 5550.
-
+Starts the Flint web server and API.
 ```bash
 flint serve
 ```
 
-#### `flint launch [image-name]`
-
-Launch a new VM with smart defaults. Supports launching from images or templates.
-
+#### `flint launch`
+Launch a new VM from an image or template.
+```bash
+flint launch [image-name-or-template] [flags]
+```
 **Examples:**
 ```bash
-# Quick launch with auto-detected SSH key
+# Quick launch with an image and auto-detected SSH key
 flint launch ubuntu-24.04 --name web-server
 
 # Launch with custom resources
 flint launch ubuntu-24.04 --name db-server --vcpus 4 --memory 8192
 
-# Launch from template
-flint launch --from my-template --name new-server
+# Launch from a previously created snapshot/template
+flint launch --from web-server --name web-server-clone
 
-# Launch with static IP
-flint launch ubuntu-24.04 --name api-server --static-ip 192.168.1.100 --gateway 192.168.1.1
+# Launch with a static IP address
+flint launch ubuntu-24.04 --name api-01 --static-ip 192.168.122.50
 ```
+**Common Flags:**
+- `--name string`: Name for the new VM.
+- `--from string`: Name of an existing VM to use as a template (must have snapshots).
+- `--vcpus int`: Number of vCPUs (default: 2).
+- `--memory int`: Memory in MB (default: 4096).
+- `--disk int`: Disk size in GB (default: 20).
+- `--cloud-init string`: Path to a cloud-init user-data file.
+- `--ssh-key string`: Path to an SSH public key (defaults to `~/.ssh/id_*.pub`).
+- `--static-ip string`: Assign a static IP address to the VM.
+- `--network string`: Libvirt network to connect to (default: "default").
+- `--pool string`: Storage pool for the new disk (default: "default").
 
-**Flags:**
-- `--name`: VM name (auto-generated if not specified)
-- `--cloud-init`: Path to cloud-init YAML file
-- `--vcpus`: Number of vCPUs (default: 2)
-- `--memory`: Memory in MB (default: 4096)
-- `--disk`: Disk size in GB (default: 20)
-- `--network`: Network name (default: "default")
-- `--pool`: Storage pool name (default: "default")
-- `--from`: Launch from template
-- `--ssh-key`: SSH public key (auto-detected if not specified)
-- `--user`: Default username (default: "ubuntu")
-- `--password`: Default password
-- `--static-ip`: Static IP address
-- `--gateway`: Gateway IP (required with --static-ip)
-- `--dns`: DNS servers (comma-separated, default: "8.8.8.8,1.1.1.1")
+---
 
 #### `flint list` (alias: `ls`)
-
-List virtual machines with their status and basic info.
-
-**Examples:**
+Lists virtual machines.
 ```bash
-flint list                    # List running VMs
-flint list --all              # List all VMs (including stopped)
-flint list --format json      # JSON output
+flint list [flags]
 ```
-
-**Flags:**
-- `--format`: Output format (table, json) (default: "table")
-- `--all`: Show all VMs (including stopped)
-
-#### `flint ssh [vm-name]`
-
-SSH into a virtual machine by name or UUID.
-
 **Examples:**
 ```bash
-flint ssh web-server           # SSH as default user
+# List only running VMs (default)
+flint list
+
+# List all VMs, including stopped ones
+flint list --all
+
+# Output in JSON format for scripting
+flint list --all --format json
+```
+**Flags:**
+- `--all`: Show all VMs (including stopped).
+- `--format string`: Output format: `table` or `json` (default: "table").
+
+---
+
+#### `flint ssh`
+SSH into a VM by name.
+```bash
+flint ssh <vm-name> [flags]
+```
+**Examples:**
+```bash
+# SSH as the default user (e.g., 'ubuntu')
+flint ssh web-server
+
+# SSH as root
 flint ssh web-server --user root
-flint ssh web-server --copy    # Copy SSH command to clipboard
-flint ssh web-server --command "systemctl status nginx"
-```
 
+# Execute a remote command
+flint ssh web-server --command "uptime"
+```
 **Flags:**
-- `--user`: SSH username (default: "ubuntu")
-- `--command`: Command to execute via SSH
-- `--copy`: Copy SSH command to clipboard instead of executing
+- `--user string`: SSH username.
+- `--command string`: Command to execute remotely.
 
-#### `flint console [vm-name]`
+---
 
-Connect to the serial console of a virtual machine.
-
-**Examples:**
+#### `flint console`
+Connect to the serial console of a VM.
 ```bash
-flint console web-server       # Connect to console
+flint console <vm-name>
 ```
+**Note:** Press `Ctrl+]` to exit the console session.
 
-**Notes:**
-- Press Ctrl+] to disconnect
+---
 
 #### `flint snapshot`
-
-Manage VM snapshots for quick VM templating.
-
+Manage VM snapshots.
+```bash
+flint snapshot <subcommand> [flags]
+```
 **Subcommands:**
-
-##### `flint snapshot create [vm-name]`
-
-Create a snapshot of a VM.
+- `create <vm-name> --name <snapshot-name>`: Create a snapshot.
+- `list <vm-name>`: List snapshots for a VM.
+- `revert <vm-name> <snapshot-name>`: Revert a VM to a snapshot.
+- `delete <vm-name> <snapshot-name>`: Delete a snapshot.
 
 **Examples:**
 ```bash
-flint snapshot create web-server --name base-config
-flint snapshot create web-server --name "after-nginx-install" --description "Web server with nginx configured"
-```
+# Create a snapshot before a risky operation
+flint snapshot create web-server --name "before-upgrade-v2"
 
+# Revert to the snapshot if something goes wrong
+flint snapshot revert web-server "before-upgrade-v2"
+```
+---
+
+#### `flint delete`
+Deletes a VM.
+```bash
+flint delete <vm-name> [flags]
+```
+**Examples:**
+```bash
+# Delete the VM definition but keep its disk
+flint delete web-server
+
+# Delete the VM AND its associated disk volumes
+flint delete web-server --disks
+```
 **Flags:**
-- `--name`: Snapshot name (required)
-- `--description`: Snapshot description
+- `--disks`: Also delete all storage volumes associated with the VM.
+- `--force, -f`: Skip the confirmation prompt.
 
-##### `flint snapshot list [vm-name]`
-
-List snapshots for a VM.
-
-**Examples:**
-```bash
-flint snapshot list web-server
-```
-
-##### `flint snapshot revert [vm-name] [snapshot-name]`
-
-Revert VM to a snapshot.
-
-**Examples:**
-```bash
-flint snapshot revert web-server base-config
-```
-
-#### `flint delete [vm-name]`
-
-Delete a virtual machine and optionally its disks.
-
-**Examples:**
-```bash
-flint delete web-server                    # Delete VM (keep disks)
-flint delete web-server --disks           # Delete VM and disks
-flint delete web-server --force           # Skip confirmation
-```
-
-**Flags:**
-- `--force`: Skip confirmation prompt
-- `--disks`: Also delete VM disks
+---
 
 ## API Reference
-
-The Flint API runs on port 5550 by default. All endpoints are prefixed with `/api`.
+The Flint API is served on the same port as the web UI (`5550` by default). All endpoints are prefixed with `/api`. The API is designed to be RESTful and predictable.
 
 ### Authentication
-
-Some endpoints require authentication tokens. Use the WebSocket endpoints with tokens obtained from the serial console endpoints.
+Currently, the API is unauthenticated for local use. Future versions will include a simple token-based auth system.
 
 ### Endpoints
 
-#### SSH Key Detection
+#### Host
+- `GET /api/host/status`: Get basic host status (hostname, hypervisor version, VM counts).
+- `GET /api/host/resources`: Get host resource usage (CPU, Memory, Storage).
 
-- `GET /api/ssh-key/detect` - Detect SSH public key from user's home directory
+#### Virtual Machines (VMs)
+- `GET /api/vms`: List all VMs with summary info.
+- `POST /api/vms`: Create a new VM from an image.
+- `GET /api/vms/{uuid}`: Get detailed information for a single VM.
+- `DELETE /api/vms/{uuid}`: Delete a VM.
+- `POST /api/vms/{uuid}/action`: Perform an action on a VM (e.g., `start`, `stop`).
 
-#### VM Management
+#### Snapshots & Templates
+- `GET /api/vms/{uuid}/snapshots`: List snapshots for a VM.
+- `POST /api/vms/{uuid}/snapshots`: Create a new snapshot for a VM.
+- `POST /api/vms/{uuid}/snapshots/{name}/revert`: Revert a VM to a snapshot.
+- `DELETE /api/vms/{uuid}/snapshots/{name}`: Delete a snapshot.
+- `GET /api/vm-templates`: List all VMs that can be used as templates (i.e., have snapshots).
+- `POST /api/vms/from-template`: Create a new VM from a template.
 
-- `GET /api/vms` - List all VMs
-- `POST /api/vms` - Create a new VM
-- `POST /api/vms/from-template` - Create VM from template
-- `GET /api/vms/{uuid}` - Get VM details
-- `DELETE /api/vms/{uuid}` - Delete VM
-- `POST /api/vms/{uuid}/action` - Perform action on VM (start, stop, etc.)
-
-#### VM Console
-
-- `GET /api/vms/{uuid}/serial-console` - Get serial console WebSocket info
-- `GET /api/vms/{uuid}/serial-console/ws` - WebSocket endpoint for serial console
-- `GET /api/vms/{uuid}/console-stream` - Get console stream WebSocket info
-
-#### VM Snapshots
-
-- `GET /api/vms/{uuid}/snapshots` - List VM snapshots
-- `POST /api/vms/{uuid}/snapshots` - Create VM snapshot
-- `DELETE /api/vms/{uuid}/snapshots/{snapshotName}` - Delete VM snapshot
-- `POST /api/vms/{uuid}/snapshots/{snapshotName}/revert` - Revert to snapshot
-
-#### VM Templates
-
-- `GET /api/vm-templates` - List available VM templates
-- `POST /api/vm-templates` - Create new template from VM
-
-#### VM Performance
-
-- `GET /api/vms/{uuid}/performance` - Get VM performance metrics
-
-#### Host Information
-
-- `GET /api/host/status` - Get host status
-- `GET /api/host/resources` - Get host resources
-
-#### Storage Management
-
-- `GET /api/storage-pools` - List storage pools
-- `GET /api/storage-pools/{poolName}/volumes` - List volumes in pool
-- `POST /api/storage-pools/{poolName}/volumes` - Create volume
-
-#### Network Management
-
-- `GET /api/networks` - List networks
-- `POST /api/networks` - Create network
-- `DELETE /api/networks/{networkName}` - Delete network
-
-#### Image Management
-
-- `GET /api/images` - List images
-- `POST /api/images/import-from-path` - Import image from path
-- `POST /api/images/download` - Download image from URL
-- `DELETE /api/images/{imageId}` - Delete image
-
-#### Activity Logs
-
-- `GET /api/activity` - Get activity logs
+#### Infrastructure
+- `GET /api/storage-pools`: List all storage pools.
+- `GET /api/storage-pools/{pool}/volumes`: List volumes in a specific pool.
+- `GET /api/networks`: List all libvirt networks.
 
 ### Request/Response Examples
 
-#### Create VM
-
-```bash
-POST /api/vms
-Content-Type: application/json
-
+#### Create a New VM
+`POST /api/vms`
+```json
+// Request Body
 {
-  "name": "web-server",
-  "memoryMB": 4096,
+  "name": "api-server-01",
+  "memoryMB": 2048,
   "vcpus": 2,
-  "diskPool": "default",
   "diskSizeGB": 20,
   "imageName": "ubuntu-24.04",
-  "imageType": "template",
-  "enableCloudInit": true,
-  "startOnCreate": true,
-  "networkName": "default"
+  "startOnCreate": true
 }
 ```
 
-#### VM Action
-
-```bash
-POST /api/vms/{uuid}/action
-Content-Type: application/json
-
+#### Perform a VM Action
+`POST /api/vms/YOUR_VM_UUID/action`
+```json
+// Request Body
 {
-  "action": "start"
+  "action": "stop"
 }
 ```
-
-Supported actions: start, stop, restart, suspend, resume, destroy
-
-#### Create Snapshot
-
-```bash
-POST /api/vms/{uuid}/snapshots
-Content-Type: application/json
-
-{
-  "name": "base-config",
-  "description": "Base configuration snapshot"
-}
-```
+*Supported actions: `start`, `stop`, `reboot`, `pause`, `resume`, `force-stop` (destroy).*
 
 ### WebSocket Connections
-
-#### Serial Console
-
-1. Get WebSocket info: `GET /api/vms/{uuid}/serial-console`
-2. Connect to: `ws://localhost:5550/api/vms/{uuid}/serial-console/ws?token={token}`
-
-The WebSocket supports bidirectional communication for interactive console sessions.
+Flint uses WebSockets for real-time serial console access.
+- `GET /api/vms/{uuid}/console-stream`: Connect to this endpoint to stream console output.
