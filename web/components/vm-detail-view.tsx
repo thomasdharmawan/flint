@@ -36,6 +36,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { VMDetailed, vmAPI } from "@/lib/api"
+import { VMNetworkInterfaceDialog } from "@/components/vm-network-interface-dialog"
 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -864,67 +865,13 @@ export function VMDetailView() {
             <CardHeader className="pb-3">
                <CardTitle className="flex items-center justify-between">
                  Network Interfaces
-                 <Dialog open={isAddNetworkOpen} onOpenChange={setIsAddNetworkOpen}>
-                   <DialogTrigger asChild>
-                     <Button size="sm">
-                       <Plus className="mr-2 h-4 w-4" />
-                       Add Interface
-                     </Button>
-                   </DialogTrigger>
-                   <DialogContent className="sm:max-w-[425px]">
-                     <DialogHeader>
-                       <DialogTitle>Add Network Interface to VM</DialogTitle>
-                       <DialogDescription>
-                         Attach a network interface to this virtual machine.
-                       </DialogDescription>
-                     </DialogHeader>
-                     <div className="grid gap-4 py-4">
-                       <div className="grid grid-cols-4 items-center gap-4">
-                         <Label htmlFor="network-name" className="text-right">
-                           Network
-                         </Label>
-                         <Input
-                           id="network-name"
-                           value={networkName}
-                           onChange={(e) => setNetworkName(e.target.value)}
-                           className="col-span-3"
-                           placeholder="default"
-                         />
-                       </div>
-                       <div className="grid grid-cols-4 items-center gap-4">
-                         <Label htmlFor="network-model" className="text-right">
-                           Model
-                         </Label>
-                         <select
-                           id="network-model"
-                           value={networkModel}
-                           onChange={(e) => setNetworkModel(e.target.value)}
-                           className="col-span-3 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                         >
-                           <option value="virtio">virtio</option>
-                           <option value="e1000">e1000</option>
-                           <option value="rtl8139">rtl8139</option>
-                         </select>
-                       </div>
-                     </div>
-                     <DialogFooter>
-                       <Button
-                         type="submit"
-                         onClick={handleAttachNetwork}
-                         disabled={isAttachingNetwork || !networkName}
-                       >
-                         {isAttachingNetwork ? (
-                           <>
-                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                             Attaching...
-                           </>
-                         ) : (
-                           "Attach Interface"
-                         )}
-                       </Button>
-                     </DialogFooter>
-                   </DialogContent>
-                 </Dialog>
+                 <Button 
+                   size="sm"
+                   onClick={() => setIsAddNetworkOpen(true)}
+                 >
+                   <Plus className="mr-2 h-4 w-4" />
+                   Add Interface
+                 </Button>
                </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -1112,6 +1059,19 @@ export function VMDetailView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Enhanced Network Interface Dialog */}
+      <VMNetworkInterfaceDialog
+        open={isAddNetworkOpen}
+        onOpenChange={setIsAddNetworkOpen}
+        vmUuid={vmData?.uuid || ""}
+        onSuccess={async () => {
+          if (vmData?.uuid) {
+            const updatedVM = await vmAPI.getById(vmData.uuid)
+            setVmData(updatedVM)
+          }
+        }}
+      />
     </div>
   )
 }

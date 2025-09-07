@@ -155,6 +155,11 @@ func (d *dummyClient) GetNetworks() ([]core.Network, error) {
 	return []core.Network{}, nil
 }
 
+func (d *dummyClient) GetSystemInterfaces() ([]core.SystemInterface, error) {
+	// Return empty array instead of nil to prevent frontend errors
+	return []core.SystemInterface{}, nil
+}
+
 func (d *dummyClient) CreateNetwork(name string, bridgeName string) error {
 	return errors.New("libvirt connection not available")
 }

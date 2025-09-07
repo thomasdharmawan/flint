@@ -35,6 +35,7 @@ type ClientInterface interface {
 	GetVolumes(poolName string) ([]core.Volume, error)
 	CreateVolume(poolName string, volConfig core.VolumeConfig) error
 	GetNetworks() ([]core.Network, error)
+	GetSystemInterfaces() ([]core.SystemInterface, error)
 	CreateNetwork(name string, bridgeName string) error
 	DeleteNetwork(name string) error
 	GetISOs() ([]core.Image, error)

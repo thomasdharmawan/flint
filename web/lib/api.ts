@@ -268,6 +268,20 @@ export interface NetworkInterface {
   bridge?: string
 }
 
+export interface SystemInterface {
+  name: string
+  type: string // physical, bridge, tap, virtual
+  state: string // up, down, inactive
+  ip_addresses: string[]
+  mac_address: string
+  mtu: number
+  speed: string
+  rx_bytes: number
+  tx_bytes: number
+  rx_packets: number
+  tx_packets: number
+}
+
 export interface VMNetworkConnection {
   vm: string
   network: string
@@ -282,6 +296,7 @@ export const networkAPI = {
   getNetworks: (): Promise<VirtualNetwork[]> => apiRequest("/networks"),
   getNetwork: (name: string): Promise<VirtualNetwork> => apiRequest(`/networks/${name}`),
   getInterfaces: (): Promise<NetworkInterface[]> => apiRequest("/interfaces"),
+  getSystemInterfaces: (): Promise<SystemInterface[]> => apiRequest("/system-interfaces"),
   getVMConnections: (): Promise<VMNetworkConnection[]> => apiRequest("/vm-connections"),
   createNetwork: (name: string, bridgeName: string): Promise<void> => 
     apiRequest("/networks", {

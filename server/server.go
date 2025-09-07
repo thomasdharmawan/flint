@@ -456,6 +456,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/storage-pools/{poolName}/volumes", s.handleCreateVolume())
 		r.Put("/storage-pools/{poolName}/volumes/{volumeName}", s.handleUpdateVolume())
 		r.Get("/networks", s.handleGetNetworks())
+		r.Get("/system-interfaces", s.handleGetSystemInterfaces())
 		r.Post("/networks", s.handleCreateNetwork())
 		r.Put("/networks/{networkName}", s.handleUpdateNetwork())
 		r.Delete("/networks/{networkName}", s.handleDeleteNetwork())

@@ -164,6 +164,21 @@ type Network struct {
 	// Future fields: Type (NAT/Bridged), DHCP Range, etc.
 }
 
+// SystemInterface represents a physical or virtual network interface
+type SystemInterface struct {
+	Name        string   `json:"name"`
+	Type        string   `json:"type"` // physical, bridge, tap, virtual
+	State       string   `json:"state"` // up, down, inactive
+	IPAddresses []string `json:"ip_addresses"`
+	MACAddress  string   `json:"mac_address"`
+	MTU         int      `json:"mtu"`
+	Speed       string   `json:"speed"`
+	RxBytes     uint64   `json:"rx_bytes"`
+	TxBytes     uint64   `json:"tx_bytes"`
+	RxPackets   uint64   `json:"rx_packets"`
+	TxPackets   uint64   `json:"tx_packets"`
+}
+
 // ADD a type for Activity Log
 type ActivityEvent struct {
 	ID        string `json:"id"`
