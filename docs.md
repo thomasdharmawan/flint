@@ -35,7 +35,7 @@ Ensure your Linux host has `libvirt` and `qemu-kvm` installed and the `libvirtd`
 ### Installation
 The recommended installation method is the one-liner script:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | bash
 ```
 This will install the `flint` binary to `/usr/local/bin`.
 
