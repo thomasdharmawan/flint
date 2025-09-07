@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>
-    A single &lt;8MB binary with a modern Web UI, CLI, and API for KVM.
+    A single &lt;11MB binary with a modern Web UI, CLI, and API for KVM.
     <br/>No XML. No bloat. Just VMs.
   </strong>
 </p>
@@ -24,8 +24,9 @@
 </p>
 
 ---
-
 ![Flint Dashboard](https://i.ibb.co/wN9H8WKX/Screenshot-2025-09-07-at-3-51-58-AM.png)
+![Flint Library](https://i.ibb.co/Z1k9XBqQ/Screenshot-2025-09-08-at-4-59-46-AM.png)
+
 
 Flint is a modern, self-contained KVM management tool built for developers, sysadmins, and home labs who want zero bloat and maximum efficiency. It was built in a few hours out of a sudden urge for something better.
 
@@ -145,7 +146,7 @@ Complete CLI commands, API reference, and advanced usage:
 -   **Backend:** Go 1.25+
 -   **Web UI:** Next.js + Tailwind + Bun
 -   **KVM Integration:** libvirt-go
--   **Binary Size:** ~8.4MB (stripped)
+-   **Binary Size:** ~11MB (stripped)
 
 ---
 
