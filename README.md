@@ -37,7 +37,7 @@ Flint is a modern, self-contained KVM management tool built for developers, sysa
 **Prerequisites:** A Linux host with `libvirt` and `qemu-kvm` installed.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | bash
 ```
 *Auto-detects OS/arch, installs to `/usr/local/bin`, and prompts for web UI passphrase setup.*
 
