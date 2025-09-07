@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/ccheshirecat/flint/pkg/core"
 	libvirt "github.com/libvirt/libvirt-go"
+	"reflect"
 	"strings"
 	"syscall"
 )
@@ -190,7 +191,17 @@ func (c *Client) GetHostResources() (core.HostResources, error) {
 			var stat syscall.Statfs_t
 			if syscall.Statfs(poolPath, &stat) == nil {
 				// Use filesystem ID to deduplicate
-				fsid := uint64(stat.Fsid.Val[0])<<32 | uint64(stat.Fsid.Val[1])
+				fsidValue := reflect.ValueOf(stat.Fsid)
+				var val reflect.Value
+				if field := fsidValue.FieldByName("Val"); field.IsValid() {
+					val = field
+				} else if field := fsidValue.FieldByName("X__val"); field.IsValid() {
+					val = field
+				} else {
+					// fallback, assume Val
+					val = fsidValue.FieldByName("Val")
+				}
+				fsid := uint64(val.Index(0).Int())<<32 | uint64(val.Index(1).Int())
 
 				// Only count this filesystem once
 				if _, exists := filesystemStats[fsid]; !exists {
