@@ -32,6 +32,8 @@ type Server struct {
 	rateLimiters     map[string]*rateLimiter
 	rateLimiterMutex sync.RWMutex
 	imageRepo        *imagerepository.ImageRepository
+	sessions         map[string]time.Time // sessionID -> expiry time
+	sessionsMu       sync.RWMutex
 }
 
 type rateLimiter struct {
@@ -50,6 +52,7 @@ func NewServer(client libvirtclient.ClientInterface, assets embed.FS) *Server {
 		assets:       assets,
 		rateLimiters: make(map[string]*rateLimiter),
 		imageRepo:    imageRepo,
+		sessions:     make(map[string]time.Time),
 	}
 
 	// Load or generate config
@@ -58,6 +61,9 @@ func NewServer(client libvirtclient.ClientInterface, assets embed.FS) *Server {
 	logger.Info("Initializing Flint server", map[string]interface{}{
 		"api_key_length": len(s.apiKey),
 	})
+
+	// Start session cleanup goroutine
+	go s.cleanupExpiredSessions()
 
 	// s.router.Use(middleware.Logger) // Add logging middleware
 	s.setupRoutes()
@@ -209,7 +215,7 @@ func (s *Server) webAuthMiddleware(next http.Handler) http.Handler {
 
 		// Check for session cookie or prompt for passphrase
 		cookie, err := r.Cookie("flint_session")
-		if err == nil && cookie.Value == "authenticated" {
+		if err == nil && s.isValidSession(cookie.Value) {
 			// Valid session, continue
 			next.ServeHTTP(w, r)
 			return
@@ -224,13 +230,20 @@ func (s *Server) webAuthMiddleware(next http.Handler) http.Handler {
 
 			passphrase := r.FormValue("passphrase")
 			if s.validatePassphrase(passphrase) {
-				// Set session cookie
+				// Create new session
+				sessionID, err := s.createSession()
+				if err != nil {
+					http.Error(w, "Failed to create session", http.StatusInternalServerError)
+					return
+				}
+				
+				// Set secure session cookie
 				http.SetCookie(w, &http.Cookie{
 					Name:     "flint_session",
-					Value:    "authenticated",
+					Value:    sessionID,
 					Path:     "/",
 					HttpOnly: true,
-					MaxAge:   3600, // 1 hour
+					MaxAge:   24 * 60 * 60, // 24 hours
 				})
 				http.Redirect(w, r, "/", http.StatusSeeOther)
 				return
@@ -318,7 +331,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		// Fallback to session cookie authentication (for web app)
 		cookie, err := r.Cookie("flint_session")
-		if err == nil && cookie.Value == "authenticated" {
+		if err == nil && s.isValidSession(cookie.Value) {
 			// Valid session from passphrase authentication
 			next.ServeHTTP(w, r)
 			return
@@ -622,4 +635,82 @@ func (s *Server) generateAuthToken() string {
 // GetAPIKey returns the server's API key (for CLI usage)
 func (s *Server) GetAPIKey() string {
 	return s.apiKey
+}
+
+// generateSessionID creates a cryptographically secure session ID
+func (s *Server) generateSessionID() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+// isValidSession checks if a session ID is valid and not expired
+func (s *Server) isValidSession(sessionID string) bool {
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
+	
+	expiry, exists := s.sessions[sessionID]
+	if !exists {
+		return false
+	}
+	
+	// Check if session has expired
+	if time.Now().After(expiry) {
+		// Clean up expired session
+		go s.cleanupExpiredSession(sessionID)
+		return false
+	}
+	
+	return true
+}
+
+// createSession creates a new session and returns the session ID
+func (s *Server) createSession() (string, error) {
+	sessionID, err := s.generateSessionID()
+	if err != nil {
+		return "", err
+	}
+	
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	
+	// Initialize sessions map if needed
+	if s.sessions == nil {
+		s.sessions = make(map[string]time.Time)
+	}
+	
+	// Session expires in 24 hours
+	expiry := time.Now().Add(24 * time.Hour)
+	s.sessions[sessionID] = expiry
+	
+	return sessionID, nil
+}
+
+// cleanupExpiredSession removes an expired session
+func (s *Server) cleanupExpiredSession(sessionID string) {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	delete(s.sessions, sessionID)
+}
+
+// cleanupExpiredSessions periodically cleans up expired sessions
+func (s *Server) cleanupExpiredSessions() {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case <-ticker.C:
+			s.sessionsMu.Lock()
+			now := time.Now()
+			for sessionID, expiry := range s.sessions {
+				if now.After(expiry) {
+					delete(s.sessions, sessionID)
+				}
+			}
+			s.sessionsMu.Unlock()
+		}
+	}
 }
