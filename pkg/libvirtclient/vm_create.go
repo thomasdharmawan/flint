@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // DomainXML defines the structure for marshalling a libvirt domain XML.
@@ -203,17 +204,10 @@ func (c *Client) CreateVM(cfg core.VMCreationConfig) (core.VM_Detailed, error) {
 	}
 	defer dom.Free()
 
-	// Step 7: If cloud-init is configured, create cloud-init ISO and add to domain XML
+	// Step 7: If cloud-init is configured, create and attach cloud-init ISO
 	if userData != "" {
-		isoPath, err := createCloudInitISO(c.conn, userData, cfg.Name)
-		if err != nil {
-			// Log the error but don't fail the VM creation
+		if err := createAndAttachCloudInitISO(c.conn, dom, userData, cfg.Name); err != nil {
 			fmt.Printf("Warning: Failed to create cloud-init ISO: %v\n", err)
-		} else {
-			// Add cloud-init ISO to domain definition (cold-attach)
-			if err := addCloudInitISOToXML(c.conn, dom, isoPath); err != nil {
-				fmt.Printf("Warning: Failed to add cloud-init ISO to domain: %v\n", err)
-			}
 		}
 	}
 
@@ -433,15 +427,33 @@ func createCloudInitISO(conn *libvirt.Connect, userData, vmName string) (string,
 		return "", fmt.Errorf("failed to write meta data: %w", err)
 	}
 
-	// Create ISO using genisoimage (common on Linux systems)
-	isoPath := fmt.Sprintf("/tmp/%s-cloudinit.iso", vmName)
-	cmd := exec.Command("genisoimage", "-output", isoPath, "-volid", "cidata", "-joliet", "-rock", tempDir)
+	// Create ISO in the flint images directory (accessible to libvirt)
+	isoPath := fmt.Sprintf("%s/%s-cloudinit.iso", flintImagePoolPath, vmName)
+	
+	// Try xorriso first (better long filename support)
+	cmd := exec.Command("xorriso", "-as", "mkisofs", "-output", isoPath, "-volid", "cidata", "-joliet", "-rock", tempDir)
 	if err := cmd.Run(); err != nil {
-		// Try mkisofs as an alternative
-		cmd = exec.Command("mkisofs", "-output", isoPath, "-volid", "cidata", "-joliet", "-rock", tempDir)
+		// Try genisoimage with relaxed restrictions
+		cmd = exec.Command("genisoimage", "-output", isoPath, "-volid", "cidata", "-relaxed-filenames", "-allow-lowercase", "-allow-multidot", tempDir)
 		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to create ISO (tried genisoimage and mkisofs): %w", err)
+			// Try mkisofs as final fallback
+			cmd = exec.Command("mkisofs", "-output", isoPath, "-volid", "cidata", "-relaxed-filenames", "-allow-lowercase", "-allow-multidot", tempDir)
+			if err := cmd.Run(); err != nil {
+				return "", fmt.Errorf("failed to create ISO (tried xorriso, genisoimage, and mkisofs): %w", err)
+			}
 		}
+	}
+	
+	// Fix permissions for libvirt access (inherit from parent directory)
+	if parentInfo, err := os.Stat(flintImagePoolPath); err == nil {
+		if stat, ok := parentInfo.Sys().(*syscall.Stat_t); ok {
+			if err := os.Chown(isoPath, int(stat.Uid), int(stat.Gid)); err != nil {
+				fmt.Printf("Warning: Failed to set cloud-init ISO ownership: %v\n", err)
+			}
+		}
+	}
+	if err := os.Chmod(isoPath, 0644); err != nil {
+		fmt.Printf("Warning: Failed to set cloud-init ISO permissions: %v\n", err)
 	}
 
 	return isoPath, nil
@@ -478,32 +490,28 @@ func addCloudInitISOToXML(conn *libvirt.Connect, dom *libvirt.Domain, isoPath st
 		return fmt.Errorf("failed to parse domain XML: %w", err)
 	}
 
-	// Find the next available CD-ROM device
-	cdromDevices := []string{"sdb", "sdc", "sdd", "sde"}
+	// Use IDE bus for cloud-init (required for proper detection)
+	// Check if hdc (ide2) is available, otherwise use hdd
 	usedDevices := make(map[string]bool)
 	for _, disk := range domain.Devices.Disks {
 		usedDevices[disk.Target.Dev] = true
 	}
 
-	var nextDevice string
-	for _, dev := range cdromDevices {
-		if !usedDevices[dev] {
-			nextDevice = dev
-			break
+	cloudInitDevice := "hdc" // ide2 - preferred for cloud-init
+	if usedDevices["hdc"] {
+		cloudInitDevice = "hdd" // ide3 - fallback
+		if usedDevices["hdd"] {
+			return fmt.Errorf("no available IDE devices for cloud-init")
 		}
 	}
 
-	if nextDevice == "" {
-		return fmt.Errorf("no available CD-ROM devices")
-	}
-
-	// Create the cloud-init disk XML
+	// Create the cloud-init disk XML with IDE bus
 	cloudInitDiskXML := fmt.Sprintf(`    <disk type="file" device="cdrom">
       <driver name="qemu" type="raw"/>
       <source file="%s"/>
-      <target dev="%s" bus="sata"/>
+      <target dev="%s" bus="ide"/>
       <readonly/>
-    </disk>`, isoPath, nextDevice)
+    </disk>`, isoPath, cloudInitDevice)
 
 	// Add the cloud-init disk to the domain XML
 	updatedXML, err := addDiskToXML(xmlDesc, cloudInitDiskXML)
@@ -579,4 +587,329 @@ func buildNetworkInterface(networkName string) struct {
 	}
 
 	return nic
+}
+
+// createLibvirtCloudInitDisk creates a cloud-init disk using libvirt's volume system
+func createLibvirtCloudInitDisk(conn *libvirt.Connect, dom *libvirt.Domain, userData, vmName string) error {
+	// Get the storage pool
+	pool, err := conn.LookupStoragePoolByName(flintImagePoolName)
+	if err != nil {
+		return fmt.Errorf("failed to lookup storage pool: %w", err)
+	}
+	defer pool.Free()
+
+	// Create meta-data content
+	metaData := fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", vmName, vmName)
+
+	// Create cloud-init volume XML with both user-data and meta-data
+	volumeName := fmt.Sprintf("%s-cloudinit.iso", vmName)
+	volumeXML := fmt.Sprintf(`<volume type='file'>
+		<name>%s</name>
+		<capacity unit='bytes'>1048576</capacity>
+		<target>
+			<format type='raw'/>
+		</target>
+		<cloudinit>
+			<user-data>%s</user-data>
+			<meta-data>%s</meta-data>
+		</cloudinit>
+	</volume>`, volumeName, userData, metaData)
+
+	// Try to create the volume with cloud-init support
+	vol, err := pool.StorageVolCreateXML(volumeXML, 0)
+	if err != nil {
+		// Fallback to manual ISO creation if libvirt doesn't support cloud-init volumes
+		return createCloudInitISOFallback(conn, dom, userData, vmName)
+	}
+	defer vol.Free()
+
+	// Get the volume path
+	volPath, err := vol.GetPath()
+	if err != nil {
+		return fmt.Errorf("failed to get volume path: %w", err)
+	}
+
+	// Add the cloud-init disk to domain XML
+	return addCloudInitDiskToXML(conn, dom, volPath)
+}
+
+// createCloudInitISOFallback creates cloud-init ISO manually (fallback method)
+func createCloudInitISOFallback(conn *libvirt.Connect, dom *libvirt.Domain, userData, vmName string) error {
+	isoPath, err := createCloudInitISO(conn, userData, vmName)
+	if err != nil {
+		return err
+	}
+	return addCloudInitDiskToXML(conn, dom, isoPath)
+}
+
+// addCloudInitDiskToXML adds cloud-init disk to domain XML (replaces addCloudInitISOToXML)
+func addCloudInitDiskToXML(conn *libvirt.Connect, dom *libvirt.Domain, diskPath string) error {
+	// Get current domain XML
+	xmlDesc, err := dom.GetXMLDesc(0)
+	if err != nil {
+		return fmt.Errorf("failed to get domain XML: %w", err)
+	}
+
+	// Parse XML to find used devices
+	type DomainXML struct {
+		XMLName xml.Name `xml:"domain"`
+		Devices struct {
+			Disks []struct {
+				Target struct {
+					Dev string `xml:"dev,attr"`
+				} `xml:"target"`
+			} `xml:"disk"`
+		} `xml:"devices"`
+	}
+
+	var domain DomainXML
+	if err := xml.Unmarshal([]byte(xmlDesc), &domain); err != nil {
+		return fmt.Errorf("failed to parse domain XML: %w", err)
+	}
+
+	// Find available IDE device for cloud-init
+	usedDevices := make(map[string]bool)
+	for _, disk := range domain.Devices.Disks {
+		usedDevices[disk.Target.Dev] = true
+	}
+
+	cloudInitDevice := "hdc" // ide2 - preferred for cloud-init
+	if usedDevices["hdc"] {
+		cloudInitDevice = "hdd" // ide3 - fallback
+		if usedDevices["hdd"] {
+			return fmt.Errorf("no available IDE devices for cloud-init")
+		}
+	}
+
+	// Create cloud-init disk XML
+	cloudInitDiskXML := fmt.Sprintf(`    <disk type="file" device="cdrom">
+      <driver name="qemu" type="raw"/>
+      <source file="%s"/>
+      <target dev="%s" bus="ide"/>
+      <readonly/>
+    </disk>`, diskPath, cloudInitDevice)
+
+	// Add to domain XML
+	updatedXML, err := addDiskToXML(xmlDesc, cloudInitDiskXML)
+	if err != nil {
+		return fmt.Errorf("failed to update domain XML: %w", err)
+	}
+
+	// Redefine domain
+	newDom, err := conn.DomainDefineXML(updatedXML)
+	if err != nil {
+		return fmt.Errorf("failed to redefine domain: %w", err)
+	}
+	newDom.Free()
+
+	return nil
+}
+
+// addNoCloudDataSource adds NoCloud datasource configuration to the domain
+func addNoCloudDataSource(conn *libvirt.Connect, dom *libvirt.Domain, userData, vmName string) error {
+	// Create meta-data content
+	metaData := fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", vmName, vmName)
+	
+	// Create cloud-init files in the storage directory
+	cloudInitDir := filepath.Join(flintImagePoolPath, fmt.Sprintf("%s-cloudinit", vmName))
+	if err := os.MkdirAll(cloudInitDir, 0755); err != nil {
+		return fmt.Errorf("failed to create cloud-init directory: %w", err)
+	}
+	
+	// Write user-data file
+	userDataPath := filepath.Join(cloudInitDir, "user-data")
+	if err := os.WriteFile(userDataPath, []byte(userData), 0644); err != nil {
+		return fmt.Errorf("failed to write user-data: %w", err)
+	}
+	
+	// Write meta-data file
+	metaDataPath := filepath.Join(cloudInitDir, "meta-data")
+	if err := os.WriteFile(metaDataPath, []byte(metaData), 0644); err != nil {
+		return fmt.Errorf("failed to write meta-data: %w", err)
+	}
+	
+	// Create vendor-data file (empty but required)
+	vendorDataPath := filepath.Join(cloudInitDir, "vendor-data")
+	if err := os.WriteFile(vendorDataPath, []byte(""), 0644); err != nil {
+		return fmt.Errorf("failed to write vendor-data: %w", err)
+	}
+	
+	// Fix permissions for libvirt access
+	if parentInfo, err := os.Stat(flintImagePoolPath); err == nil {
+		if stat, ok := parentInfo.Sys().(*syscall.Stat_t); ok {
+			os.Chown(cloudInitDir, int(stat.Uid), int(stat.Gid))
+			for _, file := range []string{userDataPath, metaDataPath, vendorDataPath} {
+				os.Chown(file, int(stat.Uid), int(stat.Gid))
+			}
+		}
+	}
+	
+	// Get current domain XML
+	xmlDesc, err := dom.GetXMLDesc(0)
+	if err != nil {
+		return fmt.Errorf("failed to get domain XML: %w", err)
+	}
+	
+	// Add SMBIOS configuration for NoCloud datasource
+	smbiosXML := fmt.Sprintf(`  <sysinfo type='smbios'>
+    <system>
+      <entry name='serial'>ds=nocloud;s=file://%s/</entry>
+    </system>
+  </sysinfo>`, cloudInitDir)
+	
+	// Add sysinfo to domain XML
+	updatedXML, err := addSysInfoToXML(xmlDesc, smbiosXML)
+	if err != nil {
+		return fmt.Errorf("failed to update domain XML: %w", err)
+	}
+	
+	// Redefine domain
+	newDom, err := conn.DomainDefineXML(updatedXML)
+	if err != nil {
+		return fmt.Errorf("failed to redefine domain: %w", err)
+	}
+	newDom.Free()
+	
+	return nil
+}
+
+// addSysInfoToXML adds sysinfo section to domain XML
+func addSysInfoToXML(existingXML, sysInfoXML string) (string, error) {
+	// Find the </os> closing tag and insert sysinfo after it
+	xmlStr := string(existingXML)
+	osEndIndex := strings.Index(xmlStr, "</os>")
+	if osEndIndex == -1 {
+		return "", fmt.Errorf("could not find </os> tag in domain XML")
+	}
+	
+	// Insert the sysinfo XML after the </os> tag
+	insertPoint := osEndIndex + len("</os>")
+	updatedXML := xmlStr[:insertPoint] + "\n" + sysInfoXML + xmlStr[insertPoint:]
+	
+	return updatedXML, nil
+}
+
+// createAndAttachCloudInitISO creates a cloud-init ISO and attaches it to the domain
+func createAndAttachCloudInitISO(conn *libvirt.Connect, dom *libvirt.Domain, userData, vmName string) error {
+	// Create meta-data content
+	metaData := fmt.Sprintf("instance-id: %s\nlocal-hostname: %s\n", vmName, vmName)
+	
+	// Create temporary directory for cloud-init files
+	tempDir, err := os.MkdirTemp("", "cloudinit-"+vmName)
+	if err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+	
+	// Write user-data file
+	userDataPath := filepath.Join(tempDir, "user-data")
+	if err := os.WriteFile(userDataPath, []byte(userData), 0644); err != nil {
+		return fmt.Errorf("failed to write user-data: %w", err)
+	}
+	
+	// Write meta-data file
+	metaDataPath := filepath.Join(tempDir, "meta-data")
+	if err := os.WriteFile(metaDataPath, []byte(metaData), 0644); err != nil {
+		return fmt.Errorf("failed to write meta-data: %w", err)
+	}
+	
+	// Create vendor-data file (empty but required)
+	vendorDataPath := filepath.Join(tempDir, "vendor-data")
+	if err := os.WriteFile(vendorDataPath, []byte(""), 0644); err != nil {
+		return fmt.Errorf("failed to write vendor-data: %w", err)
+	}
+	
+	// Create ISO in the flint images directory
+	isoPath := fmt.Sprintf("%s/%s-cloudinit.iso", flintImagePoolPath, vmName)
+	
+	// Create ISO using genisoimage with proper options for cloud-init
+	cmd := exec.Command("genisoimage", 
+		"-output", isoPath,
+		"-volid", "cidata",
+		"-joliet", 
+		"-rock",
+		"-input-charset", "utf-8",
+		tempDir)
+	
+	if err := cmd.Run(); err != nil {
+		// Try mkisofs as fallback
+		cmd = exec.Command("mkisofs",
+			"-output", isoPath,
+			"-volid", "cidata", 
+			"-joliet",
+			"-rock",
+			"-input-charset", "utf-8",
+			tempDir)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to create ISO: %w", err)
+		}
+	}
+	
+	// Fix permissions for libvirt access
+	if parentInfo, err := os.Stat(flintImagePoolPath); err == nil {
+		if stat, ok := parentInfo.Sys().(*syscall.Stat_t); ok {
+			os.Chown(isoPath, int(stat.Uid), int(stat.Gid))
+		}
+	}
+	os.Chmod(isoPath, 0644)
+	
+	// Get current domain XML
+	xmlDesc, err := dom.GetXMLDesc(0)
+	if err != nil {
+		return fmt.Errorf("failed to get domain XML: %w", err)
+	}
+	
+	// Parse XML to find used devices
+	type DomainXML struct {
+		XMLName xml.Name `xml:"domain"`
+		Devices struct {
+			Disks []struct {
+				Target struct {
+					Dev string `xml:"dev,attr"`
+				} `xml:"target"`
+			} `xml:"disk"`
+		} `xml:"devices"`
+	}
+	
+	var domain DomainXML
+	if err := xml.Unmarshal([]byte(xmlDesc), &domain); err != nil {
+		return fmt.Errorf("failed to parse domain XML: %w", err)
+	}
+	
+	// Find available IDE device for cloud-init
+	usedDevices := make(map[string]bool)
+	for _, disk := range domain.Devices.Disks {
+		usedDevices[disk.Target.Dev] = true
+	}
+	
+	cloudInitDevice := "hdc" // ide2 - preferred for cloud-init
+	if usedDevices["hdc"] {
+		cloudInitDevice = "hdd" // ide3 - fallback
+		if usedDevices["hdd"] {
+			return fmt.Errorf("no available IDE devices for cloud-init")
+		}
+	}
+	
+	// Create cloud-init disk XML
+	cloudInitDiskXML := fmt.Sprintf(`    <disk type="file" device="cdrom">
+      <driver name="qemu" type="raw"/>
+      <source file="%s"/>
+      <target dev="%s" bus="ide"/>
+      <readonly/>
+    </disk>`, isoPath, cloudInitDevice)
+	
+	// Add to domain XML
+	updatedXML, err := addDiskToXML(xmlDesc, cloudInitDiskXML)
+	if err != nil {
+		return fmt.Errorf("failed to update domain XML: %w", err)
+	}
+	
+	// Redefine domain
+	newDom, err := conn.DomainDefineXML(updatedXML)
+	if err != nil {
+		return fmt.Errorf("failed to redefine domain: %w", err)
+	}
+	newDom.Free()
+	
+	return nil
 }

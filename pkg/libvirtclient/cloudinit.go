@@ -25,11 +25,25 @@ func generateUserDataYAML(cfg *core.CloudInitConfig) (string, error) {
 		yaml.WriteString(fmt.Sprintf("hostname: %s\n", cfg.CommonFields.Hostname))
 	}
 
+	// Create default user if username is provided
 	if cfg.CommonFields.Username != "" {
-		yaml.WriteString(fmt.Sprintf("user: %s\n", cfg.CommonFields.Username))
+		yaml.WriteString("users:\n")
+		yaml.WriteString(fmt.Sprintf("  - name: %s\n", cfg.CommonFields.Username))
+		yaml.WriteString("    sudo: ALL=(ALL) NOPASSWD:ALL\n")
+		yaml.WriteString("    groups: users, admin\n")
+		yaml.WriteString("    shell: /bin/bash\n")
+		yaml.WriteString("    lock_passwd: false\n")
+		yaml.WriteString("    lock_passwd: false\n")
 	}
 
-	if cfg.CommonFields.Password != "" {
+	// Set password using chpasswd (works with plain text)
+	if cfg.CommonFields.Password != "" && cfg.CommonFields.Username != "" {
+		yaml.WriteString("chpasswd:\n")
+		yaml.WriteString("  list: |\n")
+		yaml.WriteString(fmt.Sprintf("    %s:%s\n", cfg.CommonFields.Username, cfg.CommonFields.Password))
+		yaml.WriteString("  expire: false\n")
+	} else if cfg.CommonFields.Password != "" {
+		// Set password for default user if no custom username
 		yaml.WriteString(fmt.Sprintf("password: %s\n", cfg.CommonFields.Password))
 		yaml.WriteString("chpasswd:\n")
 		yaml.WriteString("  expire: false\n")

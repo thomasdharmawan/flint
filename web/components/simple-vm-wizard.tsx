@@ -177,16 +177,19 @@ export function SimpleVMWizard() {
         imageType: config.sourceType === 'cloud' ? 'template' : 'iso',
         enableCloudInit: config.enableCloudInit,
         cloudInit: config.enableCloudInit ? {
-          hostname: config.hostname || config.name,
-          username: config.username,
-          password: config.password,
-          sshKeys: config.sshKeys.split('\n').filter(key => key.trim() !== ''),
-          networkConfig: {
-            dhcp: config.networkType === "dhcp",
-            ipAddress: config.networkType === "static" ? config.staticIP : "",
-            gateway: config.networkType === "static" ? config.gateway : "",
-            dnsServers: config.networkType === "static" ? config.dnsServers.split(',').map(dns => dns.trim()) : []
-          }
+          commonFields: {
+            hostname: config.hostname || config.name,
+            username: config.username,
+            password: config.password,
+            sshKeys: config.sshKeys,
+            networkConfig: {
+              useDHCP: config.networkType === "dhcp",
+              ipAddress: config.networkType === "static" ? config.staticIP : "",
+              gateway: config.networkType === "static" ? config.gateway : "",
+              dnsServers: config.networkType === "static" ? config.dnsServers.split(',').map(dns => dns.trim()) : []
+            }
+          },
+          rawUserData: ""
         } : null,
         StartOnCreate: true,
         NetworkName: config.network,

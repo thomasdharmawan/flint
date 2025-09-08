@@ -137,11 +137,7 @@ func (s *Server) handleDownloadRepositoryImage() http.HandlerFunc {
 			return
 		}
 
-		// Check if already downloaded
-		if s.imageRepo.IsImageDownloaded(imageID) {
-			http.Error(w, `{"error": "Image already downloaded"}`, http.StatusConflict)
-			return
-		}
+		// Allow re-download always (user can decide if they want to re-download)
 
 		// Start download in background
 		go func() {
@@ -943,6 +939,16 @@ func (s *Server) handleCreateVM() http.HandlerFunc {
 		if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 			http.Error(w, `{"error": "Invalid JSON in request body"}`, http.StatusBadRequest)
 			return
+		}
+
+		// Debug: Log the received cloud-init config
+		if cfg.CloudInit != nil {
+			fmt.Printf("DEBUG: CloudInit received - Username: %s, Password: %s, Hostname: %s\n", 
+				cfg.CloudInit.CommonFields.Username, 
+				cfg.CloudInit.CommonFields.Password, 
+				cfg.CloudInit.CommonFields.Hostname)
+		} else {
+			fmt.Printf("DEBUG: CloudInit is nil\n")
 		}
 
 		// Validate input
