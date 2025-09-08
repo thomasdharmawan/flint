@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 )
 
 // Constants for the managed image library
@@ -454,6 +455,20 @@ func copyFile(src, dst string) error {
 	// Ensure data is written to disk
 	if err := destFile.Sync(); err != nil {
 		return fmt.Errorf("failed to sync destination file: %w", err)
+	}
+
+	// Fix ownership for libvirt access - inherit from parent directory
+	if parentInfo, err := os.Stat(flintImagePoolPath); err == nil {
+		if stat, ok := parentInfo.Sys().(*syscall.Stat_t); ok {
+			if err := os.Chown(dst, int(stat.Uid), int(stat.Gid)); err != nil {
+				return fmt.Errorf("failed to set file ownership: %w", err)
+			}
+		}
+	}
+
+	// Set proper permissions for libvirt access
+	if err := os.Chmod(dst, 0644); err != nil {
+		return fmt.Errorf("failed to set file permissions: %w", err)
 	}
 
 	return nil
