@@ -2,6 +2,10 @@ package libvirtclient
 
 import (
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"syscall"
 
 	"github.com/ccheshirecat/flint/pkg/core"
 	libvirt "github.com/libvirt/libvirt-go"
@@ -91,16 +95,62 @@ func (c *Client) CreateVolume(poolName string, volConfig core.VolumeConfig) erro
 	}
 	defer pool.Free()
 
-	// simple xml for volume
-	volXML := fmt.Sprintf(`<volume>
+	// Create volume XML with explicit libvirt ownership
+	volXML := fmt.Sprintf(`<volume type='file'>
       <name>%s</name>
       <capacity unit='G'>%d</capacity>
+      <allocation unit='G'>0</allocation>
+      <target>
+        <format type='qcow2'/>
+        <permissions>
+          <mode>0600</mode>
+          <owner>64055</owner>
+          <group>994</group>
+        </permissions>
+      </target>
     </volume>`, volConfig.Name, volConfig.SizeGB)
 
-	_, err = pool.StorageVolCreateXML(volXML, 0)
+	vol, err := pool.StorageVolCreateXML(volXML, 0)
 	if err != nil {
 		return fmt.Errorf("create vol: %w", err)
 	}
+	defer vol.Free()
+
+	// Get the volume path and fix ownership if created as root
+	volPath, err := vol.GetPath()
+	if err == nil {
+		// Check if file exists and fix ownership
+		if info, err := os.Stat(volPath); err == nil {
+			// If file is owned by root, fix it
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Uid == 0 {
+				// Get pool permissions and inherit them
+				poolXML, err := pool.GetXMLDesc(0)
+				if err == nil {
+					// Extract owner/group from pool XML
+					if strings.Contains(poolXML, "<owner>") && strings.Contains(poolXML, "<group>") {
+						// Parse owner and group from pool XML
+						ownerStart := strings.Index(poolXML, "<owner>") + 7
+						ownerEnd := strings.Index(poolXML[ownerStart:], "</owner>")
+						groupStart := strings.Index(poolXML, "<group>") + 7
+						groupEnd := strings.Index(poolXML[groupStart:], "</group>")
+						
+						if ownerEnd > 0 && groupEnd > 0 {
+							ownerStr := poolXML[ownerStart : ownerStart+ownerEnd]
+							groupStr := poolXML[groupStart : groupStart+groupEnd]
+							
+							// Convert to integers and apply
+							if ownerID, err := strconv.ParseUint(ownerStr, 10, 32); err == nil {
+								if groupID, err := strconv.ParseUint(groupStr, 10, 32); err == nil {
+									os.Chown(volPath, int(ownerID), int(groupID))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

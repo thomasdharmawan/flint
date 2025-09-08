@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // DomainXML defines the structure for marshalling a libvirt domain XML.
@@ -56,7 +57,10 @@ type DomainXML struct {
 		Interfaces []struct {
 			Type   string `xml:"type,attr"`
 			Source struct {
-				Network string `xml:"network,attr"`
+				Network string `xml:"network,attr,omitempty"`
+				Bridge  string `xml:"bridge,attr,omitempty"`
+				Dev     string `xml:"dev,attr,omitempty"`
+				Mode    string `xml:"mode,attr,omitempty"`
 			} `xml:"source"`
 			Model struct {
 				Type string `xml:"type,attr"`
@@ -112,13 +116,52 @@ func (c *Client) CreateVM(cfg core.VMCreationConfig) (core.VM_Detailed, error) {
 		}
 	}
 
-	// Step 2: Create the main disk volume for the VM (if using template)
+	// Step 2: Create the main disk volume for the VM
 	var diskName string
+	
 	if cfg.ImageType == "template" && sourcePath != "" {
 		diskName = fmt.Sprintf("%s-disk-0.qcow2", cfg.Name)
 		volCfg := core.VolumeConfig{
 			Name:   diskName,
-			SizeGB: 20, // Default size, could be made configurable
+			SizeGB: uint64(cfg.DiskSizeGB), // Use configured disk size
+		}
+		if err := c.CreateVolume(flintImagePoolName, volCfg); err != nil {
+			return core.VM_Detailed{}, fmt.Errorf("could not create vm disk volume: %w", err)
+		}
+		
+		// Copy the template image to the new volume
+		pool, err := c.conn.LookupStoragePoolByName(flintImagePoolName)
+		if err != nil {
+			return core.VM_Detailed{}, fmt.Errorf("lookup pool: %w", err)
+		}
+		defer pool.Free()
+		
+		vol, err := pool.LookupStorageVolByName(diskName)
+		if err != nil {
+			return core.VM_Detailed{}, fmt.Errorf("lookup volume: %w", err)
+		}
+		defer vol.Free()
+		
+		volPath, err := vol.GetPath()
+		if err != nil {
+			return core.VM_Detailed{}, fmt.Errorf("get volume path: %w", err)
+		}
+		
+		// Use qemu-img to create a copy with the template as backing file
+		if err := exec.Command("qemu-img", "create", "-f", "qcow2", "-F", "qcow2", "-b", sourcePath, volPath).Run(); err != nil {
+			return core.VM_Detailed{}, fmt.Errorf("failed to create disk from template: %w", err)
+		}
+		
+		// Resize the disk to the requested size
+		if err := exec.Command("qemu-img", "resize", volPath, fmt.Sprintf("%dG", cfg.DiskSizeGB)).Run(); err != nil {
+			fmt.Printf("Warning: Failed to resize disk: %v\n", err)
+		}
+	} else if cfg.ImageType == "iso" && sourcePath != "" {
+		// For ISO installations, create an empty disk for the OS installation
+		diskName = fmt.Sprintf("%s-disk-0.qcow2", cfg.Name)
+		volCfg := core.VolumeConfig{
+			Name:   diskName,
+			SizeGB: uint64(cfg.DiskSizeGB),
 		}
 		if err := c.CreateVolume(flintImagePoolName, volCfg); err != nil {
 			return core.VM_Detailed{}, fmt.Errorf("could not create vm disk volume: %w", err)
@@ -160,17 +203,16 @@ func (c *Client) CreateVM(cfg core.VMCreationConfig) (core.VM_Detailed, error) {
 	}
 	defer dom.Free()
 
-	// Step 7: If cloud-init is configured, create and attach cloud-init ISO
+	// Step 7: If cloud-init is configured, create cloud-init ISO and add to domain XML
 	if userData != "" {
 		isoPath, err := createCloudInitISO(c.conn, userData, cfg.Name)
 		if err != nil {
 			// Log the error but don't fail the VM creation
-			// Cloud-init is optional, so we can continue without it
 			fmt.Printf("Warning: Failed to create cloud-init ISO: %v\n", err)
 		} else {
-			// Attach the cloud-init ISO as a CD-ROM
-			if err := attachCloudInitISO(c.conn, dom, isoPath); err != nil {
-				fmt.Printf("Warning: Failed to attach cloud-init ISO: %v\n", err)
+			// Add cloud-init ISO to domain definition (cold-attach)
+			if err := addCloudInitISOToXML(c.conn, dom, isoPath); err != nil {
+				fmt.Printf("Warning: Failed to add cloud-init ISO to domain: %v\n", err)
 			}
 		}
 	}
@@ -246,8 +288,49 @@ func buildDomainXML(cfg core.VMCreationConfig, diskVolumeName string, sourcePath
 		}
 		d.Devices.Disks = append(d.Devices.Disks, osDisk)
 		d.OS.Boot.Dev = "hd" // Boot from hard disk
-	} else if cfg.ImageType == "iso" && sourcePath != "" {
-		// Use ISO directly
+	}
+	
+	// Add main disk for ISO VMs (for OS installation)
+	if cfg.ImageType == "iso" && diskVolumeName != "" {
+		mainDisk := struct {
+			Type   string `xml:"type,attr"`
+			Device string `xml:"device,attr"`
+			Driver struct {
+				Name string `xml:"name,attr"`
+				Type string `xml:"type,attr"`
+			} `xml:"driver"`
+			Source struct {
+				Pool   string `xml:"pool,attr,omitempty"`
+				Volume string `xml:"volume,attr,omitempty"`
+				File   string `xml:"file,attr,omitempty"`
+			} `xml:"source"`
+			Target struct {
+				Dev string `xml:"dev,attr"`
+				Bus string `xml:"bus,attr"`
+			} `xml:"target"`
+		}{
+			Type:   "volume",
+			Device: "disk",
+			Driver: struct {
+				Name string `xml:"name,attr"`
+				Type string `xml:"type,attr"`
+			}{Name: "qemu", Type: "qcow2"},
+			Source: struct {
+				Pool   string `xml:"pool,attr,omitempty"`
+				Volume string `xml:"volume,attr,omitempty"`
+				File   string `xml:"file,attr,omitempty"`
+			}{Pool: flintImagePoolName, Volume: diskVolumeName},
+			Target: struct {
+				Dev string `xml:"dev,attr"`
+				Bus string `xml:"bus,attr"`
+			}{Dev: "vda", Bus: "virtio"},
+		}
+		d.Devices.Disks = append(d.Devices.Disks, mainDisk)
+	}
+	
+	// Add ISO as CDROM for ISO VMs
+	if cfg.ImageType == "iso" && sourcePath != "" {
+		// Use ISO as CDROM
 		cdrom := struct {
 			Type   string `xml:"type,attr"`
 			Device string `xml:"device,attr"`
@@ -279,31 +362,17 @@ func buildDomainXML(cfg core.VMCreationConfig, diskVolumeName string, sourcePath
 			Target: struct {
 				Dev string `xml:"dev,attr"`
 				Bus string `xml:"bus,attr"`
-			}{Dev: "sda", Bus: "sata"},
+			}{Dev: "sdb", Bus: "sata"},
 		}
 		d.Devices.Disks = append(d.Devices.Disks, cdrom)
 		d.OS.Boot.Dev = "cdrom" // Set boot order to CDROM
 	}
 
 	// --- Network Interface ---
-	nic := struct {
-		Type   string `xml:"type,attr"`
-		Source struct {
-			Network string `xml:"network,attr"`
-		} `xml:"source"`
-		Model struct {
-			Type string `xml:"type,attr"`
-		} `xml:"model"`
-	}{
-		Type: "network",
-		Source: struct {
-			Network string `xml:"network,attr"`
-		}{Network: cfg.NetworkName},
-		Model: struct {
-			Type string `xml:"type,attr"`
-		}{Type: "virtio"},
+	if cfg.NetworkName != "" {
+		nic := buildNetworkInterface(cfg.NetworkName)
+		d.Devices.Interfaces = append(d.Devices.Interfaces, nic)
 	}
-	d.Devices.Interfaces = append(d.Devices.Interfaces, nic)
 
 	// --- Default Graphics for Console Access ---
 	d.Devices.Graphics.Type = "vnc"
@@ -378,8 +447,8 @@ func createCloudInitISO(conn *libvirt.Connect, userData, vmName string) (string,
 	return isoPath, nil
 }
 
-// attachCloudInitISO attaches the cloud-init ISO to the VM as a CD-ROM
-func attachCloudInitISO(conn *libvirt.Connect, dom *libvirt.Domain, isoPath string) error {
+// addCloudInitISOToXML adds the cloud-init ISO to the domain definition (cold-attach)
+func addCloudInitISOToXML(conn *libvirt.Connect, dom *libvirt.Domain, isoPath string) error {
 	// Get the current domain XML
 	xmlDesc, err := dom.GetXMLDesc(0)
 	if err != nil {
@@ -410,12 +479,10 @@ func attachCloudInitISO(conn *libvirt.Connect, dom *libvirt.Domain, isoPath stri
 	}
 
 	// Find the next available CD-ROM device
-	cdromDevices := []string{"sda", "sdb", "sdc", "sdd"}
+	cdromDevices := []string{"sdb", "sdc", "sdd", "sde"}
 	usedDevices := make(map[string]bool)
 	for _, disk := range domain.Devices.Disks {
-		if disk.Device == "cdrom" {
-			usedDevices[disk.Target.Dev] = true
-		}
+		usedDevices[disk.Target.Dev] = true
 	}
 
 	var nextDevice string
@@ -430,18 +497,86 @@ func attachCloudInitISO(conn *libvirt.Connect, dom *libvirt.Domain, isoPath stri
 		return fmt.Errorf("no available CD-ROM devices")
 	}
 
-	// Create the attachment XML
-	attachXML := fmt.Sprintf(`<disk type="file" device="cdrom">
+	// Create the cloud-init disk XML
+	cloudInitDiskXML := fmt.Sprintf(`    <disk type="file" device="cdrom">
       <driver name="qemu" type="raw"/>
       <source file="%s"/>
       <target dev="%s" bus="sata"/>
       <readonly/>
     </disk>`, isoPath, nextDevice)
 
-	// Attach the disk
-	if err := dom.AttachDevice(attachXML); err != nil {
-		return fmt.Errorf("failed to attach cloud-init ISO: %w", err)
+	// Add the cloud-init disk to the domain XML
+	updatedXML, err := addDiskToXML(xmlDesc, cloudInitDiskXML)
+	if err != nil {
+		return fmt.Errorf("failed to update domain XML: %w", err)
 	}
 
+	// Redefine the domain with the updated XML
+	newDom, err := conn.DomainDefineXML(updatedXML)
+	if err != nil {
+		return fmt.Errorf("failed to redefine domain: %w", err)
+	}
+	newDom.Free()
+
 	return nil
+}
+
+// addDiskToXML adds a disk to existing domain XML
+func addDiskToXML(existingXML, diskXML string) (string, error) {
+	// Find the </devices> closing tag and insert the new disk before it
+	xmlStr := string(existingXML)
+	devicesEndIndex := strings.LastIndex(xmlStr, "</devices>")
+	if devicesEndIndex == -1 {
+		return "", fmt.Errorf("could not find </devices> tag in domain XML")
+	}
+	
+	// Insert the new disk XML before the closing </devices> tag
+	updatedXML := xmlStr[:devicesEndIndex] + diskXML + "\n  " + xmlStr[devicesEndIndex:]
+	
+	return updatedXML, nil
+}
+
+// buildNetworkInterface creates the appropriate network interface configuration
+func buildNetworkInterface(networkName string) struct {
+	Type   string `xml:"type,attr"`
+	Source struct {
+		Network string `xml:"network,attr,omitempty"`
+		Bridge  string `xml:"bridge,attr,omitempty"`
+		Dev     string `xml:"dev,attr,omitempty"`
+		Mode    string `xml:"mode,attr,omitempty"`
+	} `xml:"source"`
+	Model struct {
+		Type string `xml:"type,attr"`
+	} `xml:"model"`
+} {
+	nic := struct {
+		Type   string `xml:"type,attr"`
+		Source struct {
+			Network string `xml:"network,attr,omitempty"`
+			Bridge  string `xml:"bridge,attr,omitempty"`
+			Dev     string `xml:"dev,attr,omitempty"`
+			Mode    string `xml:"mode,attr,omitempty"`
+		} `xml:"source"`
+		Model struct {
+			Type string `xml:"type,attr"`
+		} `xml:"model"`
+	}{
+		Type: "network", // default
+		Model: struct {
+			Type string `xml:"type,attr"`
+		}{Type: "virtio"},
+	}
+
+	// We need access to the client to check system interfaces
+	// For now, we'll use a simple heuristic: if it starts with "br" it's likely a bridge
+	if strings.HasPrefix(networkName, "br") {
+		nic.Type = "bridge"
+		nic.Source.Bridge = networkName
+	} else {
+		// Default to virtual network
+		nic.Type = "network"
+		nic.Source.Network = networkName
+	}
+
+	return nic
 }

@@ -458,6 +458,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/networks", s.handleGetNetworks())
 		r.Get("/system-interfaces", s.handleGetSystemInterfaces())
 		r.Post("/networks", s.handleCreateNetwork())
+		r.Post("/bridges", s.handleCreateBridge())
 		r.Put("/networks/{networkName}", s.handleUpdateNetwork())
 		r.Delete("/networks/{networkName}", s.handleDeleteNetwork())
 		r.Get("/images", s.handleGetImages())

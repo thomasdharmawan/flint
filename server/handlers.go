@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -1050,6 +1051,54 @@ func (s *Server) handleCreateNetwork() http.HandlerFunc {
 	}
 }
 
+func (s *Server) handleCreateBridge() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name  string   `json:"name"`
+			Ports []string `json:"ports"`
+			STP   bool     `json:"stp"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error": "Invalid JSON in request body"}`, http.StatusBadRequest)
+			return
+		}
+
+		if req.Name == "" {
+			http.Error(w, `{"error": "Bridge name is required"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Create the bridge
+		if err := exec.Command("ip", "link", "add", "name", req.Name, "type", "bridge").Run(); err != nil {
+			http.Error(w, `{"error": "Failed to create bridge: `+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		// Add ports to the bridge
+		for _, port := range req.Ports {
+			if err := exec.Command("ip", "link", "set", port, "master", req.Name).Run(); err != nil {
+				// Log error but continue with other ports
+				fmt.Printf("Warning: Failed to add port %s to bridge %s: %v\n", port, req.Name, err)
+			}
+		}
+
+		// Enable STP if requested
+		if req.STP {
+			exec.Command("ip", "link", "set", req.Name, "type", "bridge", "stp_state", "1").Run()
+		}
+
+		// Bring the bridge up
+		if err := exec.Command("ip", "link", "set", req.Name, "up").Run(); err != nil {
+			fmt.Printf("Warning: Failed to bring bridge %s up: %v\n", req.Name, err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": fmt.Sprintf("Bridge %s created successfully", req.Name),
+		})
+	}
+}
+
 func (s *Server) handleAttachDiskToVM() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uuid := chi.URLParam(r, "uuid")
@@ -1076,18 +1125,44 @@ func (s *Server) handleAttachDiskToVM() http.HandlerFunc {
 func (s *Server) handleAttachNetworkInterfaceToVM() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		uuid := chi.URLParam(r, "uuid")
+		
+		// Support both old and new request formats
 		var req struct {
+			// Old format
 			NetworkName string `json:"networkName"`
 			Model       string `json:"model"`
+			// New format
+			InterfaceType string `json:"interfaceType"`
+			Source        string `json:"source"`
+			MacAddress    string `json:"macAddress"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, `{"error": "Invalid JSON in request body"}`, http.StatusBadRequest)
 			return
 		}
 
-		err := s.client.AttachNetworkInterfaceToVM(uuid, req.NetworkName, req.Model)
+		// Determine which format is being used
+		var networkName, model string
+		if req.InterfaceType != "" && req.Source != "" {
+			// New format
+			networkName = req.Source
+			model = req.Model
+		} else {
+			// Old format
+			networkName = req.NetworkName
+			model = req.Model
+		}
+
+		if networkName == "" || model == "" {
+			http.Error(w, `{"error": "Missing required fields: source/networkName and model"}`, http.StatusBadRequest)
+			return
+		}
+
+		// For now, just try to attach the interface directly
+		// TODO: Add proper VM state management when hot-plug is needed
+		err := s.client.AttachNetworkInterfaceToVM(uuid, networkName, model)
 		if err != nil {
-			http.Error(w, `{"error": "`+err.Error()+`"}`, http.StatusInternalServerError)
+			http.Error(w, `{"error": "Failed to attach network interface: `+err.Error()+`"}`, http.StatusInternalServerError)
 			return
 		}
 

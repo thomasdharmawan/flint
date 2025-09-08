@@ -75,6 +75,8 @@ export function SimpleVMWizard() {
 
   const [storagePools, setStoragePools] = useState<any[]>([])
   const [virtualNetworks, setVirtualNetworks] = useState<any[]>([])
+  const [systemInterfaces, setSystemInterfaces] = useState<any[]>([])
+  const [allNetworks, setAllNetworks] = useState<any[]>([])
   const [images, setImages] = useState<Image[]>([])
 
   const updateConfig = (updates: Partial<SimpleVMConfig>) => {
@@ -84,19 +86,40 @@ export function SimpleVMWizard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [pools, nets, imgs] = await Promise.all([
+        const [pools, nets, interfaces, imgs] = await Promise.all([
           storageAPI.getPools(),
           networkAPI.getNetworks(),
+          networkAPI.getSystemInterfaces(),
           imageAPI.getAll()
         ])
         
         setStoragePools(pools || [])
         setVirtualNetworks(nets || [])
+        setSystemInterfaces(interfaces || [])
         setImages(imgs || [])
+        
+        // Combine virtual networks and system interfaces for network selection
+        const combinedNetworks = [
+          ...(nets || []).map(n => ({
+            name: n.name,
+            type: 'virtual-network',
+            description: n.is_active ? 'Active virtual network' : 'Inactive virtual network',
+            status: n.is_active ? 'active' : 'inactive'
+          })),
+          ...(interfaces || []).filter(iface => 
+            iface.type === 'bridge' || iface.type === 'physical'
+          ).map(iface => ({
+            name: iface.name,
+            type: iface.type,
+            description: `${iface.type} interface${iface.ip_addresses && Array.isArray(iface.ip_addresses) && iface.ip_addresses.length > 0 ? ` (${iface.ip_addresses[0]})` : ''}`,
+            status: iface.state
+          }))
+        ]
+        setAllNetworks(combinedNetworks)
         
         // Auto-select first available options
         if (pools && pools.length > 0) updateConfig({ storagePool: pools[0].name })
-        if (nets && nets.length > 0) updateConfig({ network: nets[0].name })
+        if (combinedNetworks.length > 0) updateConfig({ network: combinedNetworks[0].name })
         
         // Auto-detect SSH key from common locations
         autoDetectSSHKey()
@@ -690,9 +713,14 @@ export function SimpleVMWizard() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(virtualNetworks || []).map((network) => (
+                    {(allNetworks || []).map((network) => (
                       <SelectItem key={network.name} value={network.name}>
-                        {network.name} ({network.type || 'bridge'})
+                        <div className="flex items-center justify-between w-full">
+                          <span>{network.name}</span>
+                          <span className="text-xs text-muted-foreground ml-2">
+                            ({network.type})
+                          </span>
+                        </div>
                       </SelectItem>
                     ))}
                   </SelectContent>

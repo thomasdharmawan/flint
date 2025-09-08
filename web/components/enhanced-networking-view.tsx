@@ -210,6 +210,61 @@ export function EnhancedNetworkingView() {
                   <Label htmlFor="stp-enabled">Enable Spanning Tree Protocol (STP)</Label>
                 </div>
               </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={() => setIsCreateBridgeOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={async () => {
+                  if (!bridgeName.trim()) {
+                    toast({
+                      title: "Error",
+                      description: "Bridge name is required",
+                      variant: "destructive",
+                    })
+                    return
+                  }
+                  
+                  try {
+                    const response = await fetch('/api/bridges', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: bridgeName,
+                        ports: bridgePorts,
+                        stp: stpEnabled
+                      })
+                    })
+                    
+                    if (!response.ok) {
+                      const errorData = await response.json().catch(() => ({}))
+                      throw new Error(errorData.error || 'Failed to create bridge')
+                    }
+                    
+                    toast({
+                      title: "Success",
+                      description: `Bridge "${bridgeName}" created successfully`,
+                    })
+                    
+                    // Refresh the interfaces list
+                    const interfaces = await networkAPI.getSystemInterfaces()
+                    setSystemInterfaces(interfaces)
+                    
+                    // Reset form and close dialog
+                    setBridgeName("br0")
+                    setBridgePorts([])
+                    setStpEnabled(false)
+                    setIsCreateBridgeOpen(false)
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: `Failed to create bridge: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                      variant: "destructive",
+                    })
+                  }
+                }}>
+                  Create Bridge
+                </Button>
+              </div>
             </DialogContent>
           </Dialog>
           
@@ -325,6 +380,57 @@ export function EnhancedNetworkingView() {
                     </div>
                   )}
                 </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={() => setIsCreateNetworkOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={async () => {
+                  if (!networkName.trim()) {
+                    toast({
+                      title: "Error",
+                      description: "Network name is required",
+                      variant: "destructive",
+                    })
+                    return
+                  }
+                  
+                  try {
+                    const response = await fetch('/api/networks', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        name: networkName,
+                        bridgeName: `virbr-${networkName}`
+                      })
+                    })
+                    
+                    if (!response.ok) {
+                      throw new Error('Failed to create network')
+                    }
+                    
+                    toast({
+                      title: "Success",
+                      description: `Virtual network "${networkName}" created successfully`,
+                    })
+                    
+                    // Refresh the network list
+                    const networks = await networkAPI.getNetworks()
+                    setVirtualNetworks(networks)
+                    
+                    // Reset form and close dialog
+                    setNetworkName("")
+                    setIsCreateNetworkOpen(false)
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: `Failed to create network: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                      variant: "destructive",
+                    })
+                  }
+                }}>
+                  Create Network
+                </Button>
               </div>
             </DialogContent>
           </Dialog>

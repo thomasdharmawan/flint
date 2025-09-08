@@ -123,11 +123,16 @@ func createManagedStoragePool(conn *libvirt.Connect) error {
 		return fmt.Errorf("failed to create image directory: %w", err)
 	}
 
-	// Define the storage pool XML
+	// Define the storage pool XML with libvirt ownership
 	poolXML := fmt.Sprintf(`<pool type="dir">
       <name>%s</name>
       <target>
         <path>%s</path>
+        <permissions>
+          <mode>0755</mode>
+          <owner>-1</owner>
+          <group>-1</group>
+        </permissions>
       </target>
     </pool>`, flintImagePoolName, flintImagePoolPath)
 
@@ -150,6 +155,7 @@ func createManagedStoragePool(conn *libvirt.Connect) error {
 
 	return nil
 }
+
 
 func (c *Client) Close() error {
 	if c.conn != nil {

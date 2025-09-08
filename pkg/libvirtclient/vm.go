@@ -595,7 +595,7 @@ func (c *Client) AttachDiskToVM(uuidStr string, volumePath string, targetDev str
 	return nil
 }
 
-// AttachNetworkInterfaceToVM attaches a network interface to a running VM
+// AttachNetworkInterfaceToVM attaches a network interface to a VM (supports hot-plug and cold-plug)
 func (c *Client) AttachNetworkInterfaceToVM(uuidStr string, networkName string, model string) error {
 	dom, err := c.conn.LookupDomainByUUIDString(uuidStr)
 	if err != nil {
@@ -605,18 +605,77 @@ func (c *Client) AttachNetworkInterfaceToVM(uuidStr string, networkName string, 
 
 	name, _ := dom.GetName()
 
-	// Create the attachment XML for a network interface
-	attachXML := fmt.Sprintf(`<interface type="network">
+	// Determine interface type based on the network name
+	interfaceType := "network" // default to virtual network
+	
+	// Check if it's a system interface (bridge or physical)
+	systemInterfaces, err := c.GetSystemInterfaces()
+	if err == nil {
+		for _, iface := range systemInterfaces {
+			if iface.Name == networkName {
+				if iface.Type == "bridge" {
+					interfaceType = "bridge"
+				} else if iface.Type == "physical" {
+					interfaceType = "direct"
+				}
+				break
+			}
+		}
+	}
+
+	// Create the appropriate attachment XML based on interface type
+	var attachXML string
+	switch interfaceType {
+	case "bridge":
+		attachXML = fmt.Sprintf(`<interface type="bridge">
+      <source bridge="%s"/>
+      <model type="%s"/>
+    </interface>`, networkName, model)
+	case "direct":
+		attachXML = fmt.Sprintf(`<interface type="direct">
+      <source dev="%s" mode="bridge"/>
+      <model type="%s"/>
+    </interface>`, networkName, model)
+	default: // network
+		attachXML = fmt.Sprintf(`<interface type="network">
       <source network="%s"/>
       <model type="%s"/>
     </interface>`, networkName, model)
-
-	// Attach the network interface
-	if err := dom.AttachDevice(attachXML); err != nil {
-		return fmt.Errorf("failed to attach network interface: %w", err)
 	}
 
-	c.logger.Add("Network Interface Attached", name, "Success", fmt.Sprintf("Network interface attached to %s", networkName))
+	// Check if VM is running for hot-plug vs cold-plug
+	state, _, err := dom.GetState()
+	if err != nil {
+		return fmt.Errorf("failed to get domain state: %w", err)
+	}
+
+	if state == libvirt.DOMAIN_RUNNING {
+		// Hot-plug: attach to running VM
+		if err := dom.AttachDevice(attachXML); err != nil {
+			return fmt.Errorf("failed to attach network interface: %w", err)
+		}
+	} else {
+		// Cold-plug: modify the domain definition
+		xmlDesc, err := dom.GetXMLDesc(0)
+		if err != nil {
+			return fmt.Errorf("failed to get domain XML: %w", err)
+		}
+
+		// Parse existing XML and add the new interface
+		updatedXML, err := addInterfaceToXML(xmlDesc, attachXML)
+		if err != nil {
+			return fmt.Errorf("failed to update domain XML: %w", err)
+		}
+
+		// Redefine the domain with the updated XML
+		newDom, err := c.conn.DomainDefineXML(updatedXML)
+		if err != nil {
+			return fmt.Errorf("failed to redefine domain: %w", err)
+		}
+		newDom.Free()
+	}
+
+	c.logger.Add("Network Interface Attached", name, "Success", fmt.Sprintf("Network interface attached to %s (%s)", networkName, interfaceType))
 	return nil
 }
 
@@ -699,4 +758,30 @@ func (c *Client) RestartVM(name string, force bool) error {
 		return dom.Reset(0)
 	}
 	return dom.Reboot(0)
+}
+
+// addInterfaceToXML adds a new network interface to existing domain XML
+func addInterfaceToXML(existingXML, interfaceXML string) (string, error) {
+	// Parse the existing domain XML
+	type DomainXML struct {
+		XMLName xml.Name `xml:"domain"`
+		Content []byte   `xml:",innerxml"`
+	}
+	
+	var domain DomainXML
+	if err := xml.Unmarshal([]byte(existingXML), &domain); err != nil {
+		return "", fmt.Errorf("failed to parse domain XML: %w", err)
+	}
+	
+	// Find the </devices> closing tag and insert the new interface before it
+	xmlStr := string(existingXML)
+	devicesEndIndex := strings.LastIndex(xmlStr, "</devices>")
+	if devicesEndIndex == -1 {
+		return "", fmt.Errorf("could not find </devices> tag in domain XML")
+	}
+	
+	// Insert the new interface XML before the closing </devices> tag
+	updatedXML := xmlStr[:devicesEndIndex] + "    " + interfaceXML + "\n  " + xmlStr[devicesEndIndex:]
+	
+	return updatedXML, nil
 }

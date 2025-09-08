@@ -31,6 +31,8 @@ import {
   Zap,
   Upload,
   Download,
+  Router,
+  Cable,
 } from "lucide-react"
 
 interface VMConfig {
@@ -80,8 +82,9 @@ interface VMConfig {
 
   // Network
   networks: Array<{
-    network: string
-    type: string
+    interfaceType: string // virtual-network, bridge, direct
+    source: string // network name or interface name
+    model: string // virtio, e1000, rtl8139
   }>
 
   // Advanced
@@ -124,7 +127,7 @@ export function CreateVMWizard() {
     diskSize: 50,
     storagePool: "default",
     diskFormat: "qcow2",
-    networks: [{ network: "default", type: "virtio" }],
+    networks: [{ interfaceType: "virtual-network", source: "default", model: "virtio" }],
     autostart: false,
     osType: "linux",
     firmware: "bios",
@@ -132,6 +135,7 @@ export function CreateVMWizard() {
 
   const [storagePools, setStoragePools] = useState<any[]>([])
   const [virtualNetworks, setVirtualNetworks] = useState<any[]>([])
+  const [systemInterfaces, setSystemInterfaces] = useState<any[]>([])
   const [images, setImages] = useState<Image[]>([])
 
   const updateConfig = (updates: Partial<VMConfig>) => {
@@ -153,12 +157,29 @@ export function CreateVMWizard() {
           path: '', // API doesn't provide path
           available: `${Math.round(p.capacity_b / 1024 / 1024 / 1024)}GB`
         })))
-        const nets = await networkAPI.getNetworks()
+        const [nets, interfaces] = await Promise.all([
+          networkAPI.getNetworks(),
+          networkAPI.getSystemInterfaces()
+        ])
+        
         setVirtualNetworks((nets || []).map(n => ({
           name: n.name,
-          type: n.type,
-          range: n.ipRange
+          type: 'virtual-network',
+          description: n.is_active ? 'Active virtual network' : 'Inactive virtual network',
+          status: n.is_active ? 'active' : 'inactive'
         })))
+        
+        // Add bridge and physical interfaces that can be used for VMs
+        const usableInterfaces = (interfaces || []).filter(iface => 
+          iface.type === 'bridge' || iface.type === 'physical'
+        ).map(iface => ({
+          name: iface.name,
+          type: iface.type,
+          description: `${iface.type} interface${iface.ip_addresses && Array.isArray(iface.ip_addresses) && iface.ip_addresses.length > 0 ? ` (${iface.ip_addresses[0]})` : ''}`,
+          status: iface.state
+        }))
+        
+        setSystemInterfaces(usableInterfaces)
 
         // Fetch images
         try {
@@ -714,7 +735,7 @@ export function CreateVMWizard() {
                     variant="outline"
                     onClick={() =>
                       updateConfig({
-                        networks: [...config.networks, { network: "default", type: "virtio" }],
+                        networks: [...config.networks, { interfaceType: "virtual-network", source: "default", model: "virtio" }],
                       })
                     }
                   >
@@ -743,34 +764,83 @@ export function CreateVMWizard() {
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label>Virtual Network</Label>
+                        <Label>Network Source</Label>
                         <Select
-                          value={netConfig.network}
+                          value={netConfig.source}
                           onValueChange={(value) => {
                             const newNetworks = [...config.networks]
-                            newNetworks[index].network = value
+                            newNetworks[index].source = value
+                            
+                            // Determine interface type based on selection
+                            const selectedVirtual = virtualNetworks.find(n => n.name === value)
+                            const selectedSystem = systemInterfaces.find(i => i.name === value)
+                            
+                            if (selectedVirtual) {
+                              newNetworks[index].interfaceType = "virtual-network"
+                            } else if (selectedSystem) {
+                              if (selectedSystem.type === 'bridge') {
+                                newNetworks[index].interfaceType = "bridge"
+                              } else {
+                                newNetworks[index].interfaceType = "direct"
+                              }
+                            }
+                            
                             updateConfig({ networks: newNetworks })
                           }}
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select network source" />
                           </SelectTrigger>
                           <SelectContent>
-                            {(virtualNetworks || []).map((network) => (
-                              <SelectItem key={network.name} value={network.name}>
-                                {network.name} ({network.type})
-                              </SelectItem>
-                            ))}
+                            {/* Virtual Networks */}
+                            {(virtualNetworks || []).length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Virtual Networks</div>
+                                {virtualNetworks.map((network) => (
+                                  <SelectItem key={`vnet-${network.name}`} value={network.name}>
+                                    <div className="flex items-center gap-2">
+                                      <Network className="h-4 w-4" />
+                                      <span>{network.name}</span>
+                                      <Badge variant={network.status === 'active' ? 'default' : 'secondary'}>
+                                        virtual
+                                      </Badge>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
+                            
+                            {/* System Interfaces */}
+                            {(systemInterfaces || []).length > 0 && (
+                              <>
+                                <div className="px-2 py-1 text-xs font-medium text-muted-foreground">System Interfaces</div>
+                                {systemInterfaces.map((iface) => (
+                                  <SelectItem key={`sys-${iface.name}`} value={iface.name}>
+                                    <div className="flex items-center gap-2">
+                                      {iface.type === 'bridge' ? (
+                                        <Router className="h-4 w-4" />
+                                      ) : (
+                                        <Cable className="h-4 w-4" />
+                                      )}
+                                      <span>{iface.name}</span>
+                                      <Badge variant={iface.status === 'up' ? 'default' : 'secondary'}>
+                                        {iface.type}
+                                      </Badge>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Interface Type</Label>
+                        <Label>Network Model</Label>
                         <Select
-                          value={netConfig.type}
+                          value={netConfig.model}
                           onValueChange={(value) => {
                             const newNetworks = [...config.networks]
-                            newNetworks[index].type = value
+                            newNetworks[index].model = value
                             updateConfig({ networks: newNetworks })
                           }}
                         >
@@ -787,12 +857,16 @@ export function CreateVMWizard() {
                     </div>
                     {/* Show network details */}
                     {(() => {
-                      const selectedNetwork = virtualNetworks.find((n) => n.name === netConfig.network)
+                      const selectedNetwork = virtualNetworks.find((n) => n.name === netConfig.source) ||
+                                            systemInterfaces.find((i) => i.name === netConfig.source)
                       return selectedNetwork ? (
                         <div className="mt-3 rounded-lg bg-muted/50 p-3 text-sm">
                           <p className="text-muted-foreground">
-                            Network: {selectedNetwork.type} • Type: {selectedNetwork.name === 'default' ? 'NAT' : 'Bridge'}
+                            Interface: {netConfig.interfaceType} • Source: {selectedNetwork.name} • Model: {netConfig.model}
                           </p>
+                          {selectedNetwork.description && (
+                            <p className="text-muted-foreground mt-1">{selectedNetwork.description}</p>
+                          )}
                         </div>
                       ) : null
                     })()}
@@ -903,7 +977,7 @@ export function CreateVMWizard() {
                     <div key={index} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Interface {index + 1}</span>
                       <span className="font-medium">
-                        {netConfig.network} ({netConfig.type})
+                        {netConfig.source} ({netConfig.model})
                       </span>
                     </div>
                   ))}
@@ -1006,7 +1080,7 @@ export function CreateVMWizard() {
                   enableCloudInit: config.enableCloudInit,
                   cloudInit: config.enableCloudInit ? config.cloudInitConfig : null,
                   StartOnCreate: config.autostart,
-                  NetworkName: config.networks[0]?.network || '',
+                  NetworkName: config.networks[0]?.source || '',
                 };
                 handleFormSubmit(formData);
               }}
