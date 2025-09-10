@@ -6,6 +6,7 @@ on:
       - 'v*'
 
 jobs:
+  # --- JOB 1: Build binaries for all target platforms ---
   build:
     name: Build for ${{ matrix.os }}/${{ matrix.arch }}
     strategy:
@@ -88,10 +89,10 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          # --- Use a unique name for each platform build ---
-          name: flint-binaries-${{ matrix.os }}-${{ matrix.arch }}
+          name: flint-binary-${{ matrix.os }}-${{ matrix.arch }}
           path: flint-${{ matrix.os }}-${{ matrix.arch }}.zip
 
+  # --- JOB 2: Create the GitHub Release after all builds are done ---
   release:
     name: Create GitHub Release
     needs: build
@@ -102,9 +103,14 @@ jobs:
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
-        path: artifacts
+        # No 'path' property here. This downloads all artifacts from the run
+        # into folders named after the artifacts in the current directory.
+
+      - name: Display structure of downloaded files (for debugging)
+        run: ls -R
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/* # changed from artifacts/*.zip
+          # The '**' glob recursively finds all .zip files to upload to the release.
+          files: "**/*.zip"
