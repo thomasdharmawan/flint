@@ -49,29 +49,35 @@ jobs:
         bun install
         bun run build
         cd ..
-
-    - name: Build
-      env:
-        PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
-      run: |
-        if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-          docker run --rm \
-            -v "$PWD":/src \
-            -w /src \
-            --platform linux/arm64 \
-            debian:bullseye \
-            bash -c "
-              apt-get update &&
-              apt-get install -y wget tar zip pkg-config build-essential &&
-              wget https://go.dev/dl/go1.25.0.linux-arm64.tar.gz &&
-              tar -C /usr/local -xzf go1.25.0.linux-arm64.tar.gz &&
-              export PATH=/usr/local/go/bin:\$PATH &&
-              go version &&
+        - name: Build
+          env:
+            PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
+          run: |
+            if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+              docker run --rm \
+                -v "$PWD":/src -w /src --platform linux/arm64 \
+                debian:bullseye \
+                bash -lc '
+                  set -euo pipefail
+                  apt-get update -qq
+                  apt-get install -y --no-install-recommends wget tar zip pkg-config build-essential ca-certificates curl ca-certificates gnupg lsb-release ca-certificates >/dev/null
+                  # Install Go 1.25.0 cleanly (override any preinstalled go)
+                  wget -q https://go.dev/dl/go1.25.0.linux-arm64.tar.gz
+                  rm -rf /usr/local/go
+                  tar -C /usr/local -xzf go1.25.0.linux-arm64.tar.gz
+                  export PATH=/usr/local/go/bin:$PATH
+                  go version
+                  # Install bun non-interactively and make it immediately available in PATH for this shell
+                  curl -fsSL https://bun.sh/install | bash -s -- --yes || true
+                  export PATH=\"$HOME/.bun/bin:$PATH\"
+                  bun --version || { echo "bun not found"; exit 1; }
+                  # Now build (deps + install normally)
+                  make deps
+                  make install
+                '
+            else
               make install
-            "
-        else
-          make install
-        fi
+            fi
 
     - name: Package
       run: |
