@@ -20,8 +20,7 @@ jobs:
         exclude:
           - os: darwin
             arch: amd64
-          - os: linux
-            arch: arm64
+
     steps:
     - uses: actions/checkout@v4
 
@@ -47,11 +46,14 @@ jobs:
         bun run build
         cd ..
 
-
-
     - name: Build
       env:
         PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'arm64' && '/usr/lib/aarch64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
+        CGO_ENABLED: 1
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+        CGO_CFLAGS: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && '-I/usr/local/include/libvirt' || '' }}
+        CGO_LDFLAGS: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && '-L/usr/local/lib -lvirt' || '' }}
       run: make install
 
     - name: Package
