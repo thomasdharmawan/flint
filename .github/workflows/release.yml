@@ -19,7 +19,7 @@ jobs:
       (matrix.os == 'linux' && matrix.arch == 'amd64' && 'hypr') ||
       (matrix.os == 'linux' && matrix.arch == 'arm64' && 'MacBook-Pro') ||
       (matrix.os == 'darwin' && matrix.arch == 'arm64' && 'MacBook-Pro')
-      }}
+     }}
 
     permissions:
       contents: write
@@ -59,12 +59,9 @@ jobs:
             -v "$PWD":/src \
             -w /src \
             --platform linux/arm64 \
-            golang:1.23-bullseye \
+            golang:1.25rc1-bullseye \
             bash -c "
               apt-get update && apt-get install -y zip pkg-config build-essential &&
-              wget https://go.dev/dl/go1.25.0.linux-arm64.tar.gz &&
-              tar -C /usr/local -xzf go1.25.0.linux-arm64.tar.gz &&
-              export PATH=/usr/local/go/bin:\$PATH &&
               go version &&
               make install
             "
