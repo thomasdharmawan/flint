@@ -3,89 +3,92 @@ name: Release Binaries
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [linux, darwin]
-        arch: [amd64, arm64]
-        exclude:
-          - os: darwin
-            arch: amd64
+        include:
+          - os: self-hosted
+            runner: hypr
+            goos: linux
+            goarch: amd64
+          - os: self-hosted
+            runner: MacBook-Pro
+            goos: linux
+            goarch: arm64
+          - os: self-hosted
+            runner: MacBook-Pro
+            goos: darwin
+            goarch: arm64
 
-    runs-on: ${{
-      (matrix.os == 'linux' && matrix.arch == 'amd64' && 'hypr') ||
-      (matrix.os == 'linux' && matrix.arch == 'arm64' && 'MacBook-Pro') ||
-      (matrix.os == 'darwin' && matrix.arch == 'arm64' && 'MacBook-Pro')
-     }}
-
-    permissions:
-      contents: write
+    runs-on: ${{ matrix.runner }}
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - uses: actions/setup-go@v5
-      if: ${{ !(matrix.os == 'linux' && matrix.arch == 'arm64') }}
-      with:
-        go-version: '1.25.0'
+      # Install Bun + Go inside Docker if cross-building for linux/arm64 on MacBook
+      - name: Build binary
+        run: |
+          set -euo pipefail
+          echo "🔨 Building ${{ matrix.goos }}/${{ matrix.goarch }} on runner: ${{ matrix.runner }}"
 
-    - name: Check environment
-      run: |
-        echo "OS: $(uname -s)"
-        echo "Arch: $(uname -m)"
-        go version || echo "Go not yet installed"
+          if [[ "${{ matrix.goos }}" == "linux" && "${{ matrix.goarch }}" == "arm64" ]]; then
+            echo "🐳 Using Docker for cross-compilation on macOS..."
+            docker run --rm \
+              -v "$PWD":/src \
+              -w /src \
+              --platform linux/arm64 \
+              debian:bullseye \
+              bash -lc '
+                set -euo pipefail
+                apt-get update -qq
+                apt-get install -y curl wget tar zip build-essential ca-certificates pkg-config git
 
-    - name: Install Bun
-      uses: oven-sh/setup-bun@v1
-      with:
-        bun-version: latest
+                # Install Go 1.25 arm64
+                wget -q https://go.dev/dl/go1.25.0.linux-arm64.tar.gz
+                tar -C /usr/local -xzf go1.25.0.linux-arm64.tar.gz
+                export PATH=/usr/local/go/bin:$PATH
 
-    - name: Build Web UI
-      run: |
-        cd web
-        bun install
-        bun run build
-        cd ..
-        - name: Build
-          env:
-            PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
-          run: |
-            if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-              docker run --rm \
-                -v "$PWD":/src -w /src --platform linux/arm64 \
-                debian:bullseye \
-                bash -lc '
-                  set -euo pipefail
-                  apt-get update -qq
-                  apt-get install -y --no-install-recommends wget tar zip pkg-config build-essential ca-certificates curl ca-certificates gnupg lsb-release ca-certificates >/dev/null
-                  # Install Go 1.25.0 cleanly (override any preinstalled go)
-                  wget -q https://go.dev/dl/go1.25.0.linux-arm64.tar.gz
-                  rm -rf /usr/local/go
-                  tar -C /usr/local -xzf go1.25.0.linux-arm64.tar.gz
-                  export PATH=/usr/local/go/bin:$PATH
-                  go version
-                  # Install bun non-interactively and make it immediately available in PATH for this shell
-                  curl -fsSL https://bun.sh/install | bash -s -- --yes || true
-                  export PATH=\"$HOME/.bun/bin:$PATH\"
-                  bun --version || { echo "bun not found"; exit 1; }
-                  # Now build (deps + install normally)
-                  make deps
-                  make install
-                '
-            else
-              make install
-            fi
+                # Install Bun properly
+                curl -fsSL https://bun.sh/install | bash
+                export PATH="$HOME/.bun/bin:$PATH"
+                bun --version
 
-    - name: Package
-      run: |
-        zip -j flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+                # Install Go + web deps
+                go version
+                make deps
 
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: flint-${{ matrix.os }}-${{ matrix.arch }}.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                # Build binary
+                make build GOOS=linux GOARCH=arm64
+              '
+          else
+            echo "⚡ Native build for ${{ matrix.goos }}/${{ matrix.goarch }}"
+            make deps
+            make build GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flint-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ./bin/flint-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            flint-linux-amd64
+            flint-linux-arm64
+            flint-darwin-arm64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
