@@ -263,7 +263,7 @@ func handlePassphraseSetup(cfg *config.Config) error {
 		fmt.Print("Enter passphrase: ")
 		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err.Error())
+			return fmt.Errorf("failed to read password: %w", err)
 		}
 
 		passphrase := string(passwordBytes)
@@ -289,7 +289,7 @@ func handlePassphraseSetup(cfg *config.Config) error {
 		fmt.Print("Enter passphrase: ")
 		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			return fmt.Errorf("failed to read password: %w", err.Error())
+			return fmt.Errorf("failed to read password: %w", err)
 		}
 
 		passphrase := string(passwordBytes)
