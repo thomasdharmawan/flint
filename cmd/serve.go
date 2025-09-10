@@ -19,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"syscall"
 )
 
 // dummyClient implements ClientInterface but returns errors for all operations
@@ -262,9 +261,9 @@ func handlePassphraseSetup(cfg *config.Config) error {
 	if setPassphrase {
 		fmt.Println("🔐 Setting up web UI passphrase...")
 		fmt.Print("Enter passphrase: ")
-		passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			return fmt.Errorf("failed to read password: %s", err.Error())
+			return fmt.Errorf("failed to read password: %w", err.Error())
 		}
 
 		passphrase := string(passwordBytes)
@@ -288,9 +287,9 @@ func handlePassphraseSetup(cfg *config.Config) error {
 	if cfg.Security.PassphraseHash == "" {
 		fmt.Println("🔐 No web UI passphrase set. Let's set one up for security.")
 		fmt.Print("Enter passphrase: ")
-		passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 		if err != nil {
-			return fmt.Errorf("failed to read password: %s", err.Error())
+			return fmt.Errorf("failed to read password: %w", err.Error())
 		}
 
 		passphrase := string(passwordBytes)
