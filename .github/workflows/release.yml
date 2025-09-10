@@ -7,12 +7,6 @@ on:
 
 jobs:
   build:
-    runs-on:
-      - self-hosted
-      - ${{ matrix.os == 'darwin' && 'macOS' || 'Linux' }}
-      - ${{ matrix.os == 'darwin' && 'ARM64' || 'X64' }}
-    permissions:
-      contents: write
     strategy:
       matrix:
         os: [linux, darwin]
@@ -20,7 +14,16 @@ jobs:
         exclude:
           - os: darwin
             arch: amd64
-          # linux/arm64 removed so mac builds it
+
+    # Explicitly assign runners
+    runs-on: ${{
+      (matrix.os == 'linux' && matrix.arch == 'amd64' && 'hypr') ||
+      (matrix.os == 'linux' && matrix.arch == 'arm64' && 'MacBook-Pro') ||
+      (matrix.os == 'darwin' && matrix.arch == 'arm64' && 'MacBook-Pro')
+      }}
+
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v4
@@ -53,33 +56,22 @@ jobs:
         CGO_ENABLED: 1
         GOOS: ${{ matrix.os }}
         GOARCH: ${{ matrix.arch }}
-        # Only macOS cross-build for linux/arm64
-        CGO_CFLAGS: ${{ matrix.os == 'darwin' && matrix.arch == 'arm64' && '-I/usr/local/include/libvirt' || '' }}
-        CGO_LDFLAGS: ${{ matrix.os == 'darwin' && matrix.arch == 'arm64' && '-L/usr/local/lib -lvirt' || '' }}
-      run: make install
+        CGO_CFLAGS: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && '-I/usr/local/include' || '' }}
+        CGO_LDFLAGS: ${{ matrix.os == 'linux' && matrix.arch == 'arm64' && '-L/usr/local/lib -lvirt' || '' }}
+      run: |
+        if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+          docker run --rm -v "$PWD":/src -w /src --platform linux/arm64 golang:1.25-bullseye make install
+        else
+          make install
+        fi
 
     - name: Package
       run: |
-        # Rename macOS-arm64 cross-build to linux-arm64
-        FILE_OS="${{ matrix.os }}"
-        FILE_ARCH="${{ matrix.arch }}"
-        if [[ "${{ matrix.os }}" == "darwin" && "${{ matrix.arch }}" == "arm64" ]]; then
-          FILE_OS="linux"
-          FILE_ARCH="arm64"
-        fi
-
-        if [ "$FILE_OS" != "windows" ]; then
-          zip -j flint-${FILE_OS}-${FILE_ARCH}.zip flint*
-        else
-          7z a flint-${FILE_OS}-${FILE_ARCH}.zip flint*
-        fi
+        zip -j flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
 
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          flint-linux-amd64.zip
-          flint-linux-arm64.zip
-          flint-darwin-arm64.zip
+        files: flint-${{ matrix.os }}-${{ matrix.arch }}.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
