@@ -14,6 +14,7 @@ import (
 	libvirt "github.com/libvirt/libvirt-go"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/term"
 	"log"
 	"os"
 	"path/filepath"
@@ -260,12 +261,16 @@ func handlePassphraseSetup(cfg *config.Config) error {
 	if setPassphrase {
 		fmt.Println("🔐 Setting up web UI passphrase...")
 		fmt.Print("Enter passphrase: ")
-		var passphrase string
-		fmt.Scanln(&passphrase)
+		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
 
+		passphrase := string(passwordBytes)
 		if len(passphrase) < 8 {
 			return fmt.Errorf("passphrase must be at least 8 characters")
 		}
+		fmt.Println() // Add newline after password input
 
 		hash := hashPassphrase(passphrase)
 		cfg.Security.PassphraseHash = hash
@@ -282,12 +287,16 @@ func handlePassphraseSetup(cfg *config.Config) error {
 	if cfg.Security.PassphraseHash == "" {
 		fmt.Println("🔐 No web UI passphrase set. Let's set one up for security.")
 		fmt.Print("Enter passphrase: ")
-		var passphrase string
-		fmt.Scanln(&passphrase)
+		passwordBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to read password: %w", err)
+		}
 
+		passphrase := string(passwordBytes)
 		if len(passphrase) < 8 {
 			return fmt.Errorf("passphrase must be at least 8 characters")
 		}
+		fmt.Println() // Add newline after password input
 
 		hash := hashPassphrase(passphrase)
 		cfg.Security.PassphraseHash = hash
