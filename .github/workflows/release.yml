@@ -20,6 +20,7 @@ jobs:
         exclude:
           - os: darwin
             arch: amd64
+          # linux/arm64 removed so mac builds it
 
     steps:
     - uses: actions/checkout@v4
@@ -46,30 +47,39 @@ jobs:
         bun run build
         cd ..
 
-    - name: Build (Linux/amd64 & macOS)
-      if: matrix.os != 'linux' || matrix.arch != 'arm64'
+    - name: Build
       env:
         PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
+        CGO_ENABLED: 1
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+        # Only macOS cross-build for linux/arm64
+        CGO_CFLAGS: ${{ matrix.os == 'darwin' && matrix.arch == 'arm64' && '-I/usr/local/include/libvirt' || '' }}
+        CGO_LDFLAGS: ${{ matrix.os == 'darwin' && matrix.arch == 'arm64' && '-L/usr/local/lib -lvirt' || '' }}
       run: make install
-
-    - name: Build Linux/ARM64 on macOS
-      if: matrix.os == 'linux' && matrix.arch == 'arm64'
-      run: |
-        docker run --rm --platform=linux/arm64 \
-          -v $PWD:/src -w /src golang:1.25 bash -c "make install"
 
     - name: Package
       run: |
-        if [ "${{ matrix.os }}" != "windows" ]; then
-          zip -j flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+        # Rename macOS-arm64 cross-build to linux-arm64
+        FILE_OS="${{ matrix.os }}"
+        FILE_ARCH="${{ matrix.arch }}"
+        if [[ "${{ matrix.os }}" == "darwin" && "${{ matrix.arch }}" == "arm64" ]]; then
+          FILE_OS="linux"
+          FILE_ARCH="arm64"
+        fi
+
+        if [ "$FILE_OS" != "windows" ]; then
+          zip -j flint-${FILE_OS}-${FILE_ARCH}.zip flint*
         else
-          7z a flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+          7z a flint-${FILE_OS}-${FILE_ARCH}.zip flint*
         fi
 
     - name: Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          flint-${{ matrix.os }}-${{ matrix.arch }}.zip
+          flint-linux-amd64.zip
+          flint-linux-arm64.zip
+          flint-darwin-arm64.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
