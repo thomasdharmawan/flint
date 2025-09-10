@@ -46,32 +46,25 @@ jobs:
         bun run build
         cd ..
 
-    # ----------------- Build Step -----------------
-    - name: Build Native or Docker ARM64
+    - name: Build (Linux/amd64 & macOS)
+      if: matrix.os != 'linux' || matrix.arch != 'arm64'
       env:
-        PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'arm64' && '/usr/lib/aarch64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
-      run: |
-        if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-          echo "Building Linux ARM64 via Docker QEMU..."
-          docker run --rm -t \
-            -v $PWD:/src -w /src \
-            --platform=linux/arm64 \
-            golang:1.25 bash -c "\
-              export CGO_ENABLED=1; \
-              export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig; \
-              export CGO_CFLAGS='-I/usr/include/libvirt'; \
-              export CGO_LDFLAGS='-L/usr/lib -lvirt'; \
-              make install \
-            "
-        else
-          echo "Building ${{ matrix.os }} ${{ matrix.arch }} natively..."
-          make install
-        fi
+        PKG_CONFIG_PATH: ${{ matrix.os == 'darwin' && '/opt/homebrew/lib/pkgconfig' || matrix.os == 'linux' && matrix.arch == 'amd64' && '/usr/lib/x86_64-linux-gnu/pkgconfig' || '' }}:$PKG_CONFIG_PATH
+      run: make install
 
-    # ----------------- Package & Release -----------------
+    - name: Build Linux/ARM64 on macOS
+      if: matrix.os == 'linux' && matrix.arch == 'arm64'
+      run: |
+        docker run --rm --platform=linux/arm64 \
+          -v $PWD:/src -w /src golang:1.25 bash -c "make install"
+
     - name: Package
       run: |
-        zip -j flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+        if [ "${{ matrix.os }}" != "windows" ]; then
+          zip -j flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+        else
+          7z a flint-${{ matrix.os }}-${{ matrix.arch }}.zip flint*
+        fi
 
     - name: Release
       uses: softprops/action-gh-release@v2
