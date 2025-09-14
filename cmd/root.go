@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"embed"
+
 	"github.com/spf13/cobra"
 )
 
@@ -31,4 +32,5 @@ func init() {
 	rootCmd.AddCommand(networkCmd)
 	rootCmd.AddCommand(storageCmd)
 	rootCmd.AddCommand(imageCmd)
+	rootCmd.AddCommand(apiKeyCmd)
 }
