@@ -6,6 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"runtime"
+
 	"github.com/ccheshirecat/flint/pkg/config"
 	"github.com/ccheshirecat/flint/pkg/core"
 	"github.com/ccheshirecat/flint/pkg/libvirtclient"
@@ -15,10 +20,6 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
-	"log"
-	"os"
-	"path/filepath"
-	"runtime"
 )
 
 // dummyClient implements ClientInterface but returns errors for all operations
@@ -485,9 +486,6 @@ WARNING: Keep this key secure and do not share it publicly.`,
 }
 
 func init() {
-	rootCmd.AddCommand(serveCmd)
-	rootCmd.AddCommand(apiKeyCmd)
-
 	// Add flags specific to the server
 	serveCmd.Flags().StringVar(&passphraseFlag, "passphrase", "", "Web UI passphrase (will be hashed)")
 	serveCmd.Flags().BoolVar(&setPassphrase, "set-passphrase", false, "Interactively set web UI passphrase")
